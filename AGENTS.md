@@ -16,10 +16,10 @@ Agent Team 为实验功能。若团队模式异常，退回前台 Subagent 串�
 - `solution-architect`：模块边界、契约、ADR、非功能设计。
 - `data-security-engineer`：Supabase、RLS、Auth、Workspace、Entitlement、邀请与管理员访问。
 - `property-crm-engineer`：房源、客户、匹配、待办、共享业务。
-- `ai-deepseek-engineer`：DeepSeek、STT 代理、视觉理解、内容工厂、合规、配额与成本。
+- `ai-deepseek-engineer`：DeepSeek、STT 代理、视觉理解、内容工厂、合规、配额、成本与 AI 管理看板。
 - `mobile-ui-engineer`：全局移动端 UI、布局、ResponsiveOverlay、设计系统。
 - `test-engineer`：单元、集成、RLS、E2E 测试；不修改生产逻辑。
-- `quality-reviewer`：契约、代码、安全、性能与测试审查；只报告不修复。
+- `quality-reviewer`：在规划期间、规划完成后和实现完成后执行只读质量、安全与契约审查；只报告不修复。
 - `integration-engineer`：依赖、根配置、CI、构建、部署与最终集成。
 
 ## 3. 契约优先
@@ -55,6 +55,9 @@ Agent Team 为实验功能。若团队模式异常，退回前台 Subagent 串�
 5. 非数据 Agent 需要 Schema 变更时，只提交 handoff，不直接改 migration。
 6. 所有 Agent 可写唯一命名的 `docs/handoffs/<task-id>-<agent>.md`。
 7. Agent 不得用 Bash 重定向、`sed -i`、脚本批量写文件绕过边界 Hook。
+8. 管理后台路径按领域拆分：`data-security-engineer` 拥有用户、邀请、Entitlement 管理；`ai-deepseek-engineer` 拥有 AI 用量、模型、纠错和合规管理。
+9. Admin 根布局（`layout.tsx`）由 `data-security-engineer` 维护；各 feature 通过 admin-nav 组合模式贡献导航项。
+10. `test-engineer` 只能写测试资产；当测试文件位于 `src/**` 下时，Hook 根据文件后缀精确判断，不授予生产目录写权限。
 
 ## 5. 任务格式
 

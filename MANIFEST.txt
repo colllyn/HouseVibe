@@ -18,9 +18,13 @@
 .claude/settings.json
 AGENTS.md
 CLAUDE.md
-MIGRATION_REPORT.md
+MANIFEST.txt
 README.md
 docs/PRD.md
+docs/contracts/README.md
+docs/plans/README.md
+docs/decisions/README.md
+docs/handoffs/README.md
 docs/coordination/HANDOFF_TEMPLATE.md
 docs/coordination/OWNERSHIP.md
 docs/coordination/PHASE_PLAYBOOK.md
