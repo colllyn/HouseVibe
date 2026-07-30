@@ -20,7 +20,7 @@ Agent Team 为实验功能。若团队模式异常，退回前台 Subagent 串�
 - `mobile-ui-engineer`：全局移动端 UI、布局、ResponsiveOverlay、设计系统。
 - `test-engineer`：单元、集成、RLS、E2E 测试；不修改生产逻辑。
 - `quality-reviewer`：在规划期间、规划完成后和实现完成后执行只读质量、安全与契约审查；只报告不修复。
-- `integration-engineer`：依赖、根配置、CI、构建、部署与最终集成。
+- `integration-engineer`：依赖、根配置、CI、构建、部署与最终集成。`integration-engineer` 是 `MANIFEST.txt` 的唯一维护者，职责仅包括：新增、删除或移动项目级配置文件时更新清单；不把构建产物、缓存、密钥或环境变量文件加入清单。
 
 ## 3. 契约优先
 

@@ -36,13 +36,13 @@ src/app/onboarding/**
 src/app/admin/layout.tsx
 src/app/admin/page.tsx
 src/app/admin/users/**
-src/app/admin/feature-access/**
+src/app/admin/feature-entitlements/**
 src/app/admin/invites/**
 
 src/app/api/auth/**
 src/app/api/invites/**
 src/app/api/admin/users/**
-src/app/api/admin/entitlements/**
+src/app/api/admin/feature-entitlements/**
 src/app/api/admin/invites/**
 
 src/types/database.ts

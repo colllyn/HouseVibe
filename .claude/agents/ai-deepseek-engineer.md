@@ -63,5 +63,5 @@ src/app/api/admin/compliance-terms/**
 - 不允许 AI 直接写数据库；先返回确认数据。
 - 不修改 Supabase migration；提交 schema request 给 data-security-engineer。
 - 不可修改 Admin 根布局（`src/app/admin/layout.tsx`）。
-- 不可修改用户、邀请和 entitlement 管理 API（`src/app/api/admin/users/**`、`src/app/api/admin/invites/**`、`src/app/api/admin/entitlements/**`）。
+- 不可修改用户、邀请和 entitlement 管理 API（`src/app/api/admin/users/**`、`src/app/api/admin/invites/**`、`src/app/api/admin/feature-entitlements/**`）。
 - DeepSeek-only；STT 是独立子系统，不属于 LLM。

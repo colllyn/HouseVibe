@@ -17,7 +17,7 @@ const cwd = path.resolve(event.cwd ?? process.cwd());
 
 const ownership = {
   "product-planner": [
-    "docs/plans/", "docs/contracts/", "docs/handoffs/"
+    "docs/plans/", "docs/handoffs/"
   ],
   "solution-architect": [
     "docs/contracts/", "docs/decisions/", "docs/handoffs/"
@@ -33,13 +33,15 @@ const ownership = {
     "src/app/admin/layout.tsx",
     "src/app/admin/page.tsx",
     "src/app/admin/users/",
-    "src/app/admin/feature-access/",
+    "src/app/admin/feature-entitlements/",
     "src/app/admin/invites/",
     "src/app/api/auth/",
     "src/app/api/invites/",
     "src/app/api/admin/users/",
-    "src/app/api/admin/entitlements/",
+    "src/app/api/admin/feature-entitlements/",
     "src/app/api/admin/invites/",
+    "src/app/(dashboard)/settings/",
+    "src/app/(dashboard)/profile/",
     "src/types/database.ts",
     "docs/handoffs/"
   ],
@@ -53,7 +55,7 @@ const ownership = {
     "src/app/(dashboard)/clients/",
     "src/app/(dashboard)/matches/",
     "src/app/(dashboard)/tasks/",
-    "src/app/(dashboard)/shared-properties/",
+    "src/app/(dashboard)/properties/shared/",
     "src/app/(dashboard)/collaboration-requests/",
     "src/app/api/properties/",
     "src/app/api/clients/",
@@ -93,6 +95,7 @@ const ownership = {
     "src/app/globals.css",
     "src/app/layout.tsx",
     "src/app/(dashboard)/layout.tsx",
+    "src/app/(dashboard)/page.tsx",
     "docs/handoffs/"
   ],
   "test-engineer": [
@@ -132,7 +135,8 @@ function allowedPath(rel, prefixes) {
   return prefixes.some((prefix) => {
     if (prefix.endsWith("/")) return rel.startsWith(prefix);
     if (prefix.endsWith(".")) return rel.startsWith(prefix);
-    return rel === prefix || rel.startsWith(`${prefix}/`);
+    // Non-slash/non-dot prefix: match exact or as common prefix (supports glob-like patterns like "use-responsive" matching "use-responsive-overlay.ts")
+    return rel === prefix || rel.startsWith(prefix);
   });
 }
 

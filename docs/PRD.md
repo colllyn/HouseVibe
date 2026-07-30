@@ -468,7 +468,7 @@ content_factory
 内容工厂授权：
 
 ```text
-系统管理员进入 /admin/feature-access
+系统管理员进入 /admin/feature-entitlements
 → 搜索指定用户
 → 授予 content_factory
 → 可选设置 expires_at
@@ -557,9 +557,12 @@ content_factory
 ├─ /collaboration-requests
 ├─ /admin（仅 System Admin）
 │  ├─ /users
-│  ├─ /feature-access
+│  ├─ /feature-entitlements
 │  ├─ /invites
-│  └─ /ai-usage
+│  ├─ /ai-usage
+│  ├─ /ai-models
+│  ├─ /ai-corrections
+│  └─ /compliance
 └─ /settings
    ├─ /profile
    ├─ /workspace
@@ -604,10 +607,15 @@ content_factory
 
 ```text
 /admin/users
-/admin/feature-access
+/admin/feature-entitlements
 /admin/invites
 /admin/ai-usage
+/admin/ai-models
+/admin/ai-corrections
+/admin/compliance
 ```
+
+`/admin/layout.tsx` 与 `/admin/page.tsx` 由 `data-security-engineer` 负责。
 
 管理员可以：
 
@@ -3078,6 +3086,10 @@ POST  /api/admin/users/:userId/restore-ai-access
 
 # 14. 分阶段开发计划
 
+> **注意**：以下 Phase 0–7 为 PRD 原始开发阶段编号，用于详细任务拆解。
+> 多 Agent 协作以 `AGENTS.md` 和 `docs/coordination/PHASE_PLAYBOOK.md` 的 **Phase 0–4** 为唯一权威阶段体系。
+> 映射关系见第 19 章。
+
 ## Phase 0：项目基础
 
 - 初始化 Next.js、Tailwind、shadcn/ui 和 Vaul
@@ -3340,8 +3352,8 @@ SUPABASE_SERVICE_ROLE_KEY=
 # 所有 LLM/VLM 均为 DeepSeek
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_TEXT_MODEL_PRIMARY=
-DEEPSEEK_TEXT_MODEL_FALLBACK=
+DEEPSEEK_TEXT_MODEL_PRIMARY=deepseek-chat
+DEEPSEEK_TEXT_MODEL_FALLBACK=deepseek-reasoner
 DEEPSEEK_REQUEST_TIMEOUT_MS=45000
 
 # DeepSeek 视觉模型部署端点（不可部署在 Vercel Serverless 内）
@@ -3375,6 +3387,17 @@ INVITE_TOKEN_SECRET=
 
 所有环境变量必须通过服务端 Schema 校验。
 
+### DeepSeek 模型环境变量默认策略
+
+1. 不得在代码中硬编码 API Key。
+2. 模型名称允许通过环境变量覆盖。
+3. `DEEPSEEK_TEXT_MODEL_PRIMARY` 缺失时，环境 Schema 使用 `deepseek-chat` 作为默认值。
+4. `DEEPSEEK_TEXT_MODEL_FALLBACK` 缺失时，环境 Schema 使用 `deepseek-reasoner` 作为默认值。
+5. `DEEPSEEK_API_KEY`、文本 API Base URL、视觉服务 Endpoint 不得提供危险默认值；缺少必须配置项时，应用启动必须产生清晰错误。
+6. 视觉模型由独立 DeepSeek-VL 推理服务提供。
+7. STT 仍是独立子系统，不属于 LLM。
+8. 禁止重新引入 OpenAI、Anthropic 或 Gemini 的 API Key 或回退路径。
+
 ---
 
 # 18. 推荐项目目录
@@ -3384,60 +3407,65 @@ src/
 ├─ app/
 │  ├─ (auth)/
 │  ├─ (dashboard)/
-│  ├─ api/
-│  └─ layout.tsx
+│  ├─ admin/
+│  └─ api/
 ├─ components/
-│  ├─ ui/
-│  ├─ forms/
-│  ├─ properties/
-│  ├─ clients/
-│  ├─ content/
-│  ├─ responsive-overlay/
-│  └─ shared/
+│  └─ ui/
 ├─ features/
 │  ├─ auth/
+│  ├─ access-control/
+│  ├─ entitlements/
 │  ├─ properties/
 │  ├─ clients/
 │  ├─ matching/
-│  ├─ transcription/
-│  ├─ vision-analysis/
+│  ├─ tasks/
+│  ├─ collaboration/
+│  ├─ content-generation/
+│  ├─ ai-runtime/
 │  ├─ ai-corrections/
 │  ├─ ai-preferences/
-│  ├─ compliance/
-│  ├─ ai-runtime/
-│  ├─ content-generation/
 │  ├─ ai-quota/
-│  ├─ collaboration/
-│  ├─ entitlements/
-│  ├─ admin/
-│  ├─ invitations/
-│  └─ tasks/
+│  └─ compliance/
 ├─ lib/
 │  ├─ supabase/
 │  ├─ ai/
-│  │  ├─ deepseek-text/
-│  │  ├─ deepseek-vision/
-│  │  ├─ circuit-breaker/
-│  │  └─ pricing/
-│  ├─ compliance-check.ts
+│  ├─ compliance/
 │  ├─ validation/
-│  ├─ privacy/
-│  ├─ matching/
-│  ├─ authorization/
-│  ├─ audit/
-│  └─ utils/
+│  └─ privacy/
 ├─ schemas/
 ├─ types/
 └─ config/
 ```
 
+> **重要**：业务组件必须放在各自的 `src/features/<domain>/**` 内。
+> `src/components/ui/**` 仅保存跨业务通用组件（shadcn/ui 封装、设计 Token 等）。
+> 禁止创建 `src/components/properties/**`、`src/components/clients/**`、`src/components/content/**` 等业务组件目录。
+> 旧版推荐目录中包含的 `src/components/properties/**`、`src/components/clients/**`、`src/components/content/**`、`src/components/forms/**`、`src/components/responsive-overlay/**`、`src/components/shared/**` 和 `src/features/transcription/**`、`src/features/vision-analysis/**`、`src/features/admin/**`、`src/features/invitations/**` 均为**旧命名，不再采用**。```
+
 ---
 
 # 19. Claude Code 执行任务
 
-请严格按以下顺序执行，不要一次性实现全部功能。
+> **阶段体系说明**：多 Agent 协作以 `AGENTS.md` 和 `docs/coordination/PHASE_PLAYBOOK.md` 的 **Phase 0–4** 为唯一权威阶段编号。
+> 本章原"第一轮、第二轮、第三轮"为 **历史开发批次标记，不再作为主协调编号**。
 
-## 第一轮：权限架构、数据模型与基础 CRUD
+## Phase 0–4 映射表
+
+| 统一 Phase | 内容 | 对应旧批次 / PRD Phase |
+|---|---|---|
+| **Phase 0** | 需求审查、架构决策与契约冻结 | 无（新增前置阶段） |
+| **Phase 1** | 项目初始化、Supabase、Auth、Workspace、RLS、基础 UI | 第一轮前半 + PRD Phase 0/1 |
+| **Phase 2** | 房源、客户、匹配、待办和合作共享库 | 第一轮后半 + 第二轮共享库部分 + PRD Phase 2/3/4 |
+| **Phase 3** | DeepSeek 智能录入、视觉理解、内容工厂、合规、配额和成本 | 第二轮 AI 部分 + 第三轮 + PRD Phase 5/6/7 |
+| **Phase 4** | 全量测试、集成、部署、审计和发布准备 | 无（新增收尾阶段） |
+
+> 以下为历史批次任务内容，保留供参考。实际执行请使用 Phase 0–4 编号，并由主 Agent 按 `AGENTS.md` 编排。
+
+---
+
+## 历史批次参考：第一轮 — 权限架构、数据模型与基础 CRUD
+
+> **旧命名，不再采用为主协调编号。** 本批次内容已映射至 Phase 1–2。
 
 1. 完整阅读本 PRD。
 2. 输出当前理解、风险、数据库 ER 关系和受影响文件。
@@ -3456,7 +3484,9 @@ src/
 15. 添加种子数据、类型检查、Lint 和测试。
 16. 输出 README 和 DECISIONS.md。
 
-## 第一轮完成标准
+## 历史批次参考：第一轮完成标准
+
+> **旧命名，不再采用。** 本完成标准已融入 Phase 1–2 验收。
 
 - 本地可运行
 - 可注册和登录
@@ -3468,7 +3498,9 @@ src/
 - 无 TypeScript 和 ESLint 错误
 - RLS 测试通过
 
-## 第二轮：DeepSeek 基础 AI、视觉、STT 与共享库
+## 历史批次参考：第二轮 — DeepSeek 基础 AI、视觉、STT 与共享库
+
+> **旧命名，不再采用为主协调编号。** 本批次内容已映射至 Phase 2–3。
 
 1. MediaRecorder 录音、波形和 60 秒自动停止。
 2. `/api/ai/transcribe` multipart Route Handler。
@@ -3483,7 +3515,9 @@ src/
 11. 实现隐私过滤、DeepSeek Usage 标准化和 AI 用量记录。
 12. 实现合作共享库、脱敏视图、`allow_marketing_reuse` 独立开关和合作请求。
 
-## 第三轮：管理员、成本合规与受限内容工厂
+## 历史批次参考：第三轮 — 管理员、成本合规与受限内容工厂
+
+> **旧命名，不再采用为主协调编号。** 本批次内容已映射至 Phase 3。
 
 1. 系统管理员后台、用户列表和账号状态。
 2. 功能授权、撤销、过期和邀请链接。
@@ -3522,9 +3556,9 @@ src/
 ---
 
 
-## 19.1 Claude Code v1.3 强制执行补充
+## 19.1 Claude Code 强制执行补充（适用于 Phase 1–3）
 
-在执行 Phase 1、Phase 2、Phase 3、Phase 5 和 Phase 6 时，必须遵守：
+在执行 Phase 1、Phase 2、Phase 3（对应 PRD 原始 Phase 1/2/3/5/6）时，必须遵守：
 
 1. **DeepSeek-only**：删除 OpenAI/Anthropic/Gemini 的运行时 Provider、环境变量和回退代码。SDK 可以复用兼容格式，但请求必须指向 DeepSeek。
 2. **多模态解析**：properties 相关视觉任务支持 Provider 内部 `imageUrls` 数组；公共 API 优先接收 `propertyMediaIds`，服务端生成短期 URL。
