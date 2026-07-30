@@ -1,0 +1,30 @@
+export type ApiResponse<T> =
+  | { data: T; error: null }
+  | { data: null; error: ApiError };
+
+export type ErrorCode =
+  | "UNAUTHENTICATED"
+  | "FORBIDDEN"
+  | "WORKSPACE_ACCESS_DENIED"
+  | "FEATURE_NOT_ALLOWED"
+  | "CONTENT_FACTORY_NOT_ALLOWED"
+  | "PROPERTY_NOT_MARKETING_REUSABLE"
+  | "QUOTA_EXCEEDED"
+  | "COST_LIMIT_EXCEEDED"
+  | "RATE_LIMITED"
+  | "RESOURCE_NOT_FOUND"
+  | "VALIDATION_FAILED"
+  | "COMPLIANCE_BLOCKED"
+  | "INVALID_AI_OUTPUT"
+  | "TRANSCRIPTION_TOO_LARGE"
+  | "TRANSCRIPTION_DURATION_EXCEEDED"
+  | "TRANSCRIPTION_UNSUPPORTED_MEDIA"
+  | "TRANSCRIPTION_TIMEOUT"
+  | "CONFLICT"
+  | "INTERNAL_ERROR";
+
+export interface ApiError {
+  code: ErrorCode;
+  message: string;
+  details?: Record<string, unknown>;
+}

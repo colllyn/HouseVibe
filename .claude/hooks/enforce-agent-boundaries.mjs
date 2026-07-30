@@ -42,6 +42,8 @@ const ownership = {
     "src/app/api/admin/invites/",
     "src/app/(dashboard)/settings/",
     "src/app/(dashboard)/profile/",
+    "src/config/env.ts",
+    "src/lib/privacy/",
     "src/types/database.ts",
     "docs/handoffs/"
   ],
