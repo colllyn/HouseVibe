@@ -45,6 +45,9 @@ src/app/api/admin/users/**
 src/app/api/admin/feature-entitlements/**
 src/app/api/admin/invites/**
 
+src/app/(dashboard)/settings/**
+src/app/(dashboard)/profile/**
+
 src/types/database.ts
 ```
 

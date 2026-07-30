@@ -7,7 +7,7 @@
   - 移动端使用 Vaul/shadcn Drawer；
   - 桌面端使用居中 Dialog；
   - 统一封装 `ResponsiveOverlay`。
-- Drawer 使用 `max-height: 90dvh`、内部滚动、Safe Area、软键盘可见区域适配。
+- Drawer 使用 `max-height: 92dvh`、内部滚动、Safe Area、软键盘可见区域适配。
 - 不在窄屏展示宽表格；默认卡片，桌面端可切表格。
 - 表单必须有 loading、empty、error、retry 和保存反馈。
 - 中文必须为实际 UTF-8 字符，不写 `\uXXXX`。

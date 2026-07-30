@@ -1385,7 +1385,7 @@ V1：
 
 ## 合规预检 Compliance Shield
 
-内容生成后、返回可复制状态前，必须经过 `utils/compliance-check.ts` 或等价服务端模块扫描。
+内容生成后、返回可复制状态前，必须经过 `src/lib/compliance/check.ts` 或等价服务端模块扫描。
 
 ### 风险词库
 
@@ -2806,7 +2806,7 @@ POST /api/ai/generate-content
 - 权限或配额检查失败时不得调用模型
 - 配额和成本必须通过 `reserve_ai_quota` 原子预占
 - 调用模型前计算 `reservedEstimatedCostUsd`
-- 内容生成后必须经过 `utils/compliance-check.ts`
+- 内容生成后必须经过 `src/lib/compliance/check.ts`
 - 存在未解决 block 级合规风险时，响应仍可返回草稿，但 `copyAllowed = false`
 - Prompt 必须包含已确认 `visual_summary` 与 `ai_labels`，不得包含未脱敏联系方式
 - 429 响应应包含当日上限和下一次重置时间，但不得泄露其他用户数据
@@ -3090,7 +3090,7 @@ POST  /api/admin/users/:userId/restore-ai-access
 > 多 Agent 协作以 `AGENTS.md` 和 `docs/coordination/PHASE_PLAYBOOK.md` 的 **Phase 0–4** 为唯一权威阶段体系。
 > 映射关系见第 19 章。
 
-## Phase 0：项目基础
+## PRD Phase 0：项目基础
 
 - 初始化 Next.js、Tailwind、shadcn/ui 和 Vaul
 - 配置 Supabase Auth
@@ -3098,7 +3098,7 @@ POST  /api/admin/users/:userId/restore-ai-access
 - 建立统一 `ResponsiveOverlay` 组件
 - 建立环境变量校验、错误边界和审计基础
 
-## Phase 1：多租户数据库与权限
+## PRD Phase 1：多租户数据库与权限
 
 - 创建核心业务表
 - 创建 workspace 隔离 RLS
@@ -3115,7 +3115,7 @@ POST  /api/admin/users/:userId/restore-ai-access
 - 创建 Storage 策略
 - 编写 RLS 自动化测试
 
-## Phase 2：全员基础房源能力
+## PRD Phase 2：全员基础房源能力
 
 - 房源列表、详情、创建和编辑
 - 图片上传
@@ -3126,7 +3126,7 @@ POST  /api/admin/users/:userId/restore-ai-access
 - 软删除
 - 私有数据隔离
 
-## Phase 3：全员客户与匹配能力
+## PRD Phase 3：全员客户与匹配能力
 
 - 客户 CRUD
 - 沟通记录和待办
@@ -3138,7 +3138,7 @@ POST  /api/admin/users/:userId/restore-ai-access
 - 自然语言搜索
 - 规则匹配和解释
 
-## Phase 4：共享合作库
+## PRD Phase 4：共享合作库
 
 - 脱敏共享
 - `is_shared` 配置
@@ -3146,7 +3146,7 @@ POST  /api/admin/users/:userId/restore-ai-access
 - 合作请求
 - 下架和授权过期
 
-## Phase 5：系统管理员后台
+## PRD Phase 5：系统管理员后台
 
 - 用户列表
 - 功能授权和撤销
@@ -3160,7 +3160,7 @@ POST  /api/admin/users/:userId/restore-ai-access
 - AI 纠错分析
 - 授权审计日志
 
-## Phase 6：受限内容工厂
+## PRD Phase 6：受限内容工厂
 
 - 内容路由守卫
 - 内容 API 权限检查
@@ -3175,7 +3175,7 @@ POST  /api/admin/users/:userId/restore-ai-access
 - 事实与风险提示
 - AI 用量记录、次数/成本原子预占、成本熔断和 429 拦截
 
-## Phase 7：发布归因与工作台
+## PRD Phase 7：发布归因与工作台
 
 - 内容编号和私信口令
 - 发布数据录入
@@ -3440,7 +3440,7 @@ src/
 > **重要**：业务组件必须放在各自的 `src/features/<domain>/**` 内。
 > `src/components/ui/**` 仅保存跨业务通用组件（shadcn/ui 封装、设计 Token 等）。
 > 禁止创建 `src/components/properties/**`、`src/components/clients/**`、`src/components/content/**` 等业务组件目录。
-> 旧版推荐目录中包含的 `src/components/properties/**`、`src/components/clients/**`、`src/components/content/**`、`src/components/forms/**`、`src/components/responsive-overlay/**`、`src/components/shared/**` 和 `src/features/transcription/**`、`src/features/vision-analysis/**`、`src/features/admin/**`、`src/features/invitations/**` 均为**旧命名，不再采用**。```
+> 旧版推荐目录中包含的 `src/components/properties/**`、`src/components/clients/**`、`src/components/content/**`、`src/components/forms/**`、`src/components/responsive-overlay/**`、`src/components/shared/**` 和 `src/features/transcription/**`、`src/features/vision-analysis/**`、`src/features/admin/**`、`src/features/invitations/**` 均为**旧命名，不再采用**。
 
 ---
 
@@ -3527,7 +3527,7 @@ src/
 6. `/admin/ai-corrections` 高频纠错与 Prompt 版本效果分析。
 7. 内容页面、API、表和 Storage 的三层权限守卫。
 8. 小红书、抖音和朋友圈生成，并注入确认后的视觉摘要与标签。
-9. 实现 `src/lib/compliance-check.ts`，服务端保存命中结果并返回 `copyAllowed`。
+9. 实现 `src/lib/compliance/check.ts`，服务端保存命中结果并返回 `copyAllowed`。
 10. 实现 block/review/highlight 处理和复制/待发布拦截。
 11. 实现内容 👍/👎、负反馈原因和纠错日志。
 12. 实现次数与成本原子预占、429、实际 Token 成本结算和管理员恢复。
@@ -3556,16 +3556,16 @@ src/
 ---
 
 
-## 19.1 Claude Code 强制执行补充（适用于 Phase 1–3）
+## 19.1 Claude Code 强制执行补充（适用于统一 Phase 1–3）
 
-在执行 Phase 1、Phase 2、Phase 3（对应 PRD 原始 Phase 1/2/3/5/6）时，必须遵守：
+在执行统一 Phase 1、Phase 2、Phase 3（按 Phase 0–4 映射表分别对应项目初始化与权限架构、基础业务与共享库、AI 与内容工厂实现阶段）时，必须遵守：
 
 1. **DeepSeek-only**：删除 OpenAI/Anthropic/Gemini 的运行时 Provider、环境变量和回退代码。SDK 可以复用兼容格式，但请求必须指向 DeepSeek。
 2. **多模态解析**：properties 相关视觉任务支持 Provider 内部 `imageUrls` 数组；公共 API 优先接收 `propertyMediaIds`，服务端生成短期 URL。
 3. **视觉模型部署**：DeepSeek-VL endpoint 是外部 GPU 推理服务，不在 Vercel 函数中加载模型权重。
 4. **Diff 记录**：保存房源和客户时，如存在 `requestId`，必须在服务端读取 AI 原始输出，计算脱敏 Diff，并写入 `ai_correction_logs`。
 5. **偏好学习**：不得直接在线微调；只生成可查看、可删除、有证据阈值的 Prompt Hint。
-6. **敏感词扫描**：`/api/ai/generate-content` 返回前必须经过 `src/lib/compliance-check.ts`，并把服务端结果持久化。
+6. **敏感词扫描**：`/api/ai/generate-content` 返回前必须经过 `src/lib/compliance/check.ts`，并把服务端结果持久化。
 7. **复制权限**：前端按钮状态必须来自服务端 `copyAllowed` / `compliance_status`，不能仅在客户端重新扫描。
 8. **原子配额**：`reserve_ai_quota` 同时检查当日次数、成功成本和未过期预占成本。
 9. **成本计算**：模型价格从版本化配置读取，不得散落硬编码；成功后根据实际 Usage 结算。
