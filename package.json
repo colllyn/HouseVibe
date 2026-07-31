@@ -11,7 +11,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
+    "db:reset": "supabase db reset",
+    "db:test": "supabase test db",
+    "db:lint": "supabase db lint",
+    "db:types": "supabase gen types typescript --local"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -46,6 +53,7 @@
     "eslint-config-next": "^15.5.7",
     "jsdom": "^27.2.0",
     "postcss": "^8.5.6",
+    "supabase": "^2.110.0",
     "tailwindcss": "^4.1.17",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.1",
