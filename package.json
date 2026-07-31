@@ -17,6 +17,7 @@
     "supabase:status": "supabase status",
     "db:reset": "supabase db reset",
     "db:test": "supabase test db",
+    "db:test:performance": "supabase db test --local supabase/tests/performance/workspace_rls_explain.sql.bench",
     "db:lint": "supabase db lint",
     "db:types": "supabase gen types typescript --local"
   },
