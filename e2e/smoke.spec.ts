@@ -30,7 +30,7 @@ test.describe("Homepage", () => {
 });
 
 test.describe("Dashboard", () => {
-  test("loads successfully at /dashboard", async ({ page }) => {
+  test("loads successfully at /dashboard (redirects to /login when unauthenticated)", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
 
@@ -38,7 +38,8 @@ test.describe("Dashboard", () => {
 
     expect(response?.status()).toBe(200);
 
-    await expect(page.locator("text=工作台")).toBeVisible({ timeout: 10000 });
+    // Unauthenticated users are redirected to /login
+    await expect(page.getByRole("heading", { name: "登录" })).toBeVisible({ timeout: 10000 });
 
     expect(errors).toEqual([]);
   });
@@ -78,7 +79,7 @@ test.describe("Responsive layout", () => {
     ).toBeVisible({ timeout: 10000 });
   });
 
-  test("dashboard content is visible at mobile viewport (375px)", async ({
+  test("dashboard redirects to login at mobile viewport (375px)", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 375, height: 812 });
@@ -86,7 +87,8 @@ test.describe("Responsive layout", () => {
     const response = await page.goto("/dashboard");
     expect(response?.status()).toBe(200);
 
-    await expect(page.locator("text=工作台")).toBeVisible({ timeout: 10000 });
+    // Unauthenticated → redirect to /login
+    await expect(page.getByRole("heading", { name: "登录" })).toBeVisible({ timeout: 10000 });
   });
 });
 

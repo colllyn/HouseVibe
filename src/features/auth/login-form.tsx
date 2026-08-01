@@ -7,11 +7,13 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2, LogIn } from "lucide-react";
 import { signInAction } from "@/features/auth/actions";
+import { getSafeNextPath } from "@/features/auth/redirects";
 import { LoginInputSchema, type LoginInput } from "@/features/auth/schemas";
 
 export function LoginForm() {
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? undefined;
+  const rawNext = searchParams.get("next");
+  const next = rawNext ? getSafeNextPath(rawNext) : undefined;
   const [showPassword, setShowPassword] = useState(false);
 
   const [state, formAction, isPending] = useActionState(signInAction, {});

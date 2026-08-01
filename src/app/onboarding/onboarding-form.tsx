@@ -10,8 +10,11 @@ import {
   type OnboardingInput,
 } from "@/features/auth/schemas";
 
-export default function OnboardingPage() {
-  const [state, formAction, isPending] = useActionState(createWorkspaceAction, {});
+export function OnboardingForm() {
+  const [state, formAction, isPending] = useActionState(
+    createWorkspaceAction,
+    {},
+  );
 
   const {
     register,
@@ -34,7 +37,9 @@ export default function OnboardingPage() {
           <div className="rounded-full bg-primary/10 w-16 h-16 flex items-center justify-center mx-auto mb-4">
             <Building2 className="h-8 w-8 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">创建您的工作区</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            创建您的工作区
+          </h1>
           <p className="text-sm text-muted-foreground mt-2">
             工作区是您的独立业务空间，所有房源和客户数据仅在工作区内可见。
           </p>
@@ -64,7 +69,10 @@ export default function OnboardingPage() {
           {/* City (optional) */}
           <div className="space-y-2">
             <label htmlFor="city" className="text-sm font-medium">
-              所在城市 <span className="text-muted-foreground font-normal">（选填）</span>
+              所在城市{" "}
+              <span className="text-muted-foreground font-normal">
+                （选填）
+              </span>
             </label>
             <input
               id="city"

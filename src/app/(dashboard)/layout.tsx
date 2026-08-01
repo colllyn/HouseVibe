@@ -11,6 +11,9 @@ import { AppShell } from "@/components/layout/app-shell";
  * 3. 0 active workspaces → redirect to /onboarding
  * 4. ≥1 active workspaces → render the dashboard shell
  *
+ * Note: /onboarding lives OUTSIDE this route group (at src/app/onboarding/),
+ * so the redirect here does NOT create an infinite loop.
+ *
  * This layout is dynamically rendered (no caching of user-specific data).
  */
 export default async function DashboardLayout({
