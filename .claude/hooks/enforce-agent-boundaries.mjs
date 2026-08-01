@@ -110,6 +110,7 @@ const ownership = {
     "next.config.", "tsconfig.json", "eslint.config.", "postcss.config.",
     "tailwind.config.", "components.json", ".github/", "scripts/",
     "src/config/", "src/lib/env/", "vercel.json", "README.md",
+    ".claude/skills/", ".claude/settings.json",
     "docs/handoffs/"
   ]
 };
@@ -188,7 +189,7 @@ if (!ownership[agent]) process.exit(0);
 // Layer 3: File write boundary enforcement (known agents only)
 // ====================================================================
 
-if (["Write", "Edit", "MultiEdit"].includes(tool)) {
+if (["Write", "Edit", "MultiEdit", "Delete"].includes(tool)) {
   const filePath = input.file_path ?? input.path;
   if (!filePath) fail(`${tool} 缺少 file_path`);
 
@@ -224,6 +225,13 @@ if (tool === "Bash") {
   ];
   if (shellMutation.some((token) => lower.includes(token))) {
     fail(`${agent} 不得通过 Bash 绕过 Edit/Write 边界：${command}`);
+  }
+
+  // Prevent cp / mv / install from copying or moving files across boundaries.
+  // Uses word-boundary regex to avoid matching scp, grep, etc.
+  const copyMovePattern = /\b(?:cp|mv|install)\s+/;
+  if (copyMovePattern.test(command)) {
+    fail(`${agent} 不得通过 cp / mv / install 绕过文件写入边界：${command}`);
   }
 
   const dependencyMutation = [
