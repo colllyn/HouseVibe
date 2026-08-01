@@ -17,7 +17,7 @@ const navItems: NavItem[] = [
   { label: "首页", href: "/", icon: LayoutDashboard },
   { label: "房源", href: "/properties", icon: Building2, disabled: true },
   { label: "客户", href: "/clients", icon: Users, disabled: true },
-  { label: "我的", href: "/settings", icon: User, disabled: true },
+  { label: "我的", href: "/settings/profile", icon: User },
 ];
 
 function DisabledBadge() {
@@ -73,7 +73,8 @@ export function MobileBottomNav() {
             );
           }
 
-          const isActive = pathname === item.href;
+          const isActive =
+            pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}

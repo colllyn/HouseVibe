@@ -47,6 +47,30 @@ export const OnboardingInputSchema = z.object({
   city: z.string().max(50, "城市名最多 50 个字符").optional(),
 });
 
+/**
+ * Profile update form schema.
+ * fullName is required; phone, city, and avatarUrl are optional.
+ */
+export const ProfileUpdateSchema = z.object({
+  fullName: z.string().min(1, "请输入姓名"),
+  phone: z.string().max(30, "手机号最多 30 个字符").optional(),
+  city: z.string().max(50, "城市名最多 50 个字符").optional(),
+  avatarUrl: z.string().url("头像地址格式不正确").max(500, "头像地址过长").optional(),
+});
+
+/**
+ * Workspace update form schema.
+ * name is required; city and businessType are optional.
+ * Only workspace owner can update.
+ */
+export const WorkspaceUpdateSchema = z.object({
+  name: z.string().min(1, "请输入工作区名称").max(100, "名称最多 100 个字符"),
+  city: z.string().max(50, "城市名最多 50 个字符").optional(),
+  businessType: z.string().max(50, "业务类型最多 50 个字符").optional(),
+});
+
 export type LoginInput = z.infer<typeof LoginInputSchema>;
 export type RegisterInput = z.infer<typeof RegisterInputSchema>;
 export type OnboardingInput = z.infer<typeof OnboardingInputSchema>;
+export type ProfileUpdateInput = z.infer<typeof ProfileUpdateSchema>;
+export type WorkspaceUpdateInput = z.infer<typeof WorkspaceUpdateSchema>;

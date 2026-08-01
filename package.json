@@ -14,6 +14,7 @@
     "test:e2e": "playwright test",
     "test:e2e:auth": "playwright test e2e/auth-flows.spec.ts",
     "test:e2e:admin": "playwright test e2e/admin-flows.spec.ts",
+    "test:e2e:settings": "playwright test e2e/settings-flows.spec.ts",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",

@@ -67,7 +67,7 @@ VALUES
   ('7b4d0003-0000-4000-8000-000000000003', 'b1111111-b111-b111-b111-b111111111b1',
    'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0', 'owner', 'active');
 
-SELECT plan(16);
+SELECT plan(18);
 
 -- =============================================================================
 -- Test 1: User B cannot read User A's non-public profile details
@@ -133,37 +133,44 @@ SELECT results_eq(
 );
 
 -- =============================================================================
--- Test 6: Member cannot elevate own role to owner
+-- Test 6: Member cannot UPDATE workspace_members (UPDATE revoked)
 -- =============================================================================
-UPDATE public.workspace_members
-SET role = 'owner'
-WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
-  AND user_id = 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0';
+SELECT throws_ok(
+  $$UPDATE public.workspace_members SET role = 'owner'
+    WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
+      AND user_id = 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0'$$,
+  '42501',
+  NULL,
+  'Member cannot UPDATE workspace_members (permission denied)'
+);
 
 SELECT is(
   (SELECT role FROM public.workspace_members
    WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
      AND user_id = 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0'),
   'member'::public.workspace_role,
-  'Member cannot elevate own role to owner'
+  'Role unchanged after denied UPDATE'
 );
 
 -- =============================================================================
--- Test 7: Member cannot deactivate Owner
+-- Test 7: Member cannot deactivate Owner (UPDATE revoked)
 -- =============================================================================
-UPDATE public.workspace_members
-SET status = 'inactive'
-WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
-  AND user_id = 'a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0';
+SELECT throws_ok(
+  $$UPDATE public.workspace_members SET status = 'inactive'
+    WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
+      AND user_id = 'a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0'$$,
+  '42501',
+  NULL,
+  'Member cannot deactivate owner (permission denied)'
+);
 
--- UPDATE attempt was done as User B above. Verify as postgres that status unchanged.
 RESET ROLE;
 SELECT is(
   (SELECT status FROM public.workspace_members
    WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
      AND user_id = 'a0a0a0a0-a0a0-a0a0-a0a0-a0a0a0a0a0a0'),
   'active'::public.member_status,
-  'Member cannot deactivate owner (verified by postgres)'
+  'Owner status unchanged after denied deactivation'
 );
 
 -- Re-authenticate as User C for subsequent test

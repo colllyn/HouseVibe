@@ -55,7 +55,7 @@ VALUES
   ('6a3d0002-0000-4000-8000-000000000002', 'a1111111-a111-a111-a111-a111111111a1',
    'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0', 'member', 'active');
 
-SELECT plan(9);
+SELECT plan(10);
 
 -- =============================================================================
 -- Test 1: User A reads own profile
@@ -140,35 +140,34 @@ SELECT results_eq(
 );
 
 -- =============================================================================
--- Test 8: Owner can deactivate a member
+-- Test 8: Direct UPDATE on workspace_members revoked (20260801000004)
 -- =============================================================================
-UPDATE public.workspace_members
-SET status = 'inactive'
-WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
-  AND user_id = 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0';
-
-SELECT is(
-  (SELECT status FROM public.workspace_members
-   WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
-     AND user_id = 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0'),
-  'inactive'::public.member_status,
-  'Owner can deactivate a member'
+SELECT throws_ok(
+  $$UPDATE public.workspace_members SET status = 'inactive'
+    WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
+      AND user_id = 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0'$$,
+  '42501',
+  NULL,
+  'Owner cannot directly UPDATE workspace_members (use RPC)'
 );
-
--- =============================================================================
--- Test 9: Owner can reactivate a member
--- =============================================================================
-UPDATE public.workspace_members
-SET status = 'active'
-WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
-  AND user_id = 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0';
 
 SELECT is(
   (SELECT status FROM public.workspace_members
    WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
      AND user_id = 'b0b0b0b0-b0b0-b0b0-b0b0-b0b0b0b0b0b0'),
   'active'::public.member_status,
-  'Owner can reactivate a member'
+  'Member status unchanged after denied direct UPDATE'
+);
+
+-- =============================================================================
+-- Test 9: Both members still active (no REST bypass possible)
+-- =============================================================================
+SELECT is(
+  (SELECT count(*)::int FROM public.workspace_members
+   WHERE workspace_id = 'a1111111-a111-a111-a111-a111111111a1'
+     AND status = 'active'),
+  2,
+  'Both members still active after UPDATE revoked'
 );
 
 -- =============================================================================

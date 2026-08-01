@@ -20,7 +20,7 @@ describe("MobileBottomNav", () => {
   }
 
   describe("disabled items", () => {
-    const disabledLabels = ["房源", "客户", "我的"];
+    const disabledLabels = ["房源", "客户"];
 
     it.each(disabledLabels)("%s item has aria-disabled=\"true\"", (label) => {
       render(<MobileBottomNav />);
@@ -40,23 +40,22 @@ describe("MobileBottomNav", () => {
     it("all disabled items display 即将开放 badge", () => {
       render(<MobileBottomNav />);
       const badges = screen.getAllByText("即将开放");
-      expect(badges.length).toBe(3);
+      expect(badges.length).toBe(2);
     });
   });
 
   describe("enabled items", () => {
-    it("首页 is a <Link> component (renders as <a>)", () => {
+    it.each(["首页", "我的"])("%s is a <Link> component (renders as <a>)", (label) => {
       renderNav();
-      const homeText = screen.getByText("首页");
-      const anchor = homeText.closest("a");
+      const el = screen.getByText(label);
+      const anchor = el.closest("a");
       expect(anchor).not.toBeNull();
-      expect((anchor as HTMLAnchorElement).getAttribute("href")).toBe("/");
     });
 
-    it("首页 does NOT have aria-disabled", () => {
+    it.each(["首页", "我的"])("%s does NOT have aria-disabled", (label) => {
       render(<MobileBottomNav />);
-      const homeText = screen.getByText("首页");
-      const disabledAncestor = homeText.closest('[aria-disabled="true"]');
+      const el = screen.getByText(label);
+      const disabledAncestor = el.closest('[aria-disabled="true"]');
       expect(disabledAncestor).toBeNull();
     });
   });
@@ -71,8 +70,10 @@ describe("MobileBottomNav", () => {
     it("disabled items are NOT links (no link role)", () => {
       render(<MobileBottomNav />);
       const links = screen.getAllByRole("link");
-      expect(links.length).toBe(1);
-      expect(links[0]?.textContent).toContain("首页");
+      expect(links.length).toBe(2);
+      const linkTexts = links.map((l) => l.textContent);
+      expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("我的"))).toBe(true);
     });
   });
 });
@@ -84,7 +85,7 @@ describe("DesktopSidebar", () => {
   }
 
   describe("disabled items", () => {
-    const disabledLabels = ["房源", "客户", "设置"];
+    const disabledLabels = ["房源", "客户"];
 
     it.each(disabledLabels)("%s item has aria-disabled=\"true\"", (label) => {
       render(<DesktopSidebar />);
@@ -117,12 +118,12 @@ describe("DesktopSidebar", () => {
     it("all disabled items display 即将开放 badge", () => {
       render(<DesktopSidebar />);
       const badges = screen.getAllByText("即将开放");
-      expect(badges.length).toBe(3);
+      expect(badges.length).toBe(2);
     });
   });
 
   describe("enabled items", () => {
-    it.each(["工作台", "首页"])("%s is a <Link> component (renders as <a>)", (label) => {
+    it.each(["工作台", "首页", "设置"])("%s is a <Link> component (renders as <a>)", (label) => {
       render(<DesktopSidebar />);
       const allMatching = screen.getAllByText(label);
       let found = false;
@@ -137,7 +138,7 @@ describe("DesktopSidebar", () => {
       expect(found).toBe(true);
     });
 
-    it.each(["工作台", "首页"])("%s does NOT have aria-disabled", (label) => {
+    it.each(["工作台", "首页", "设置"])("%s does NOT have aria-disabled", (label) => {
       render(<DesktopSidebar />);
       const allMatching = screen.getAllByText(label);
       let checked = false;
@@ -167,9 +168,9 @@ describe("DesktopSidebar", () => {
       const linkTexts = links.map((l) => l.textContent);
       expect(linkTexts.some((t) => t?.includes("工作台"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("设置"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("房源"))).toBe(false);
       expect(linkTexts.some((t) => t?.includes("客户"))).toBe(false);
-      expect(linkTexts.some((t) => t?.includes("设置"))).toBe(false);
     });
   });
 });
