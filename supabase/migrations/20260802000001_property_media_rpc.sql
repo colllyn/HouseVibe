@@ -50,7 +50,12 @@ begin
     raise exception 'Not a member of this workspace' using errcode = '42501';
   end if;
 
-  -- 4. Collect all non-deleted media IDs for this property in current order, excluding the target
+  -- 4. Lock all non-deleted media rows for this property (prevents concurrent reordering)
+  perform id from public.property_media
+    where property_id = v_property_id and deleted_at is null
+    for update;
+
+  -- 5. Collect all non-deleted media IDs for this property in current order, excluding the target
   select array_agg(id order by sort_order asc, created_at asc)
   into v_media_ids
   from public.property_media

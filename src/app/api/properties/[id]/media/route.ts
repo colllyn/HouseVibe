@@ -368,7 +368,10 @@ export async function POST(
 
       if (insertErr || !inserted) {
         // f. Compensation: delete storage object on DB failure
-        await serverClient.storage.from("property-private").remove([storagePath]);
+        const { error: removeErr } = await serverClient.storage.from("property-private").remove([storagePath]);
+        if (removeErr) {
+          console.error("Media upload compensation failed for", storagePath, removeErr);
+        }
         rejections.push({
           index: i,
           code: "INTERNAL_ERROR",

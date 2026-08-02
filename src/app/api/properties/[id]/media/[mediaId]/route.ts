@@ -138,20 +138,20 @@ export async function PATCH(
 
     const input = parsed.data;
 
-    // If setting isCover = true, unset cover on all other media first
+    // If setting isCover = true, use atomic RPC
     if (input.isCover === true) {
-      await client
-        .from("property_media")
-        .update({ is_cover: false })
-        .eq("property_id", id)
-        .eq("workspace_id", workspaceId)
-        .is("deleted_at", null)
-        .neq("id", mediaId);
+      const { error: coverErr } = await client.rpc("set_media_cover", { p_media_id: mediaId });
+      if (coverErr) {
+        return jsonResponse(
+          { data: null, error: { code: "INTERNAL_ERROR", message: "设置封面失败" } },
+          { status: 500, headers: h },
+        );
+      }
     }
 
-    // Build update payload
+    // Build update payload (non-cover fields)
     const updatePayload: Record<string, unknown> = {};
-    if (input.isCover !== undefined) updatePayload.is_cover = input.isCover;
+    if (input.isCover !== undefined && !input.isCover) updatePayload.is_cover = false;
     if (input.sortOrder !== undefined) updatePayload.sort_order = input.sortOrder;
     if (input.sceneTag !== undefined) updatePayload.scene_tag = input.sceneTag;
 
@@ -260,10 +260,10 @@ export async function DELETE(
       );
     }
 
-    // Verify media belongs to property
+    // Verify media belongs to property and get storage_path for cleanup
     const { data: media } = await client
       .from("property_media")
-      .select("id")
+      .select("id, storage_path")
       .eq("id", mediaId)
       .eq("property_id", id)
       .eq("workspace_id", workspaceId)
@@ -280,6 +280,17 @@ export async function DELETE(
     const now = new Date().toISOString();
     const { data: _deletedMedia, error: rpcErr } = await client
       .rpc("soft_delete_media", { p_media_id: mediaId });
+
+    // Clean up storage object after successful DB soft-delete
+    if (!rpcErr) {
+      const serverClient = await createClient();
+      const { error: removeErr } = await serverClient.storage
+        .from("property-private")
+        .remove([media.storage_path]);
+      if (removeErr) {
+        console.error("Media storage cleanup failed for", media.storage_path, removeErr);
+      }
+    }
 
     if (rpcErr) {
       const msg = String(rpcErr.message || rpcErr);

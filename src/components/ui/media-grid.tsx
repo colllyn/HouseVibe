@@ -473,6 +473,7 @@ export function CoverImage({ propertyId, className }: CoverImageProps) {
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setLoadError(true);
+        setCoverItem(null);
       });
     return () => ac.abort();
   }, [propertyId]);
