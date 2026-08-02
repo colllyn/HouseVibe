@@ -114,35 +114,70 @@ test.describe("Client CRUD", () => {
   });
 
   // 6. Change stage
+  // 6. Change stage via real UI — navigate to edit page, select, save, verify
   test("6. change client stage", async ({ page }) => {
     await createClient(page, { name: "Stage Change", phone: "13500135000" });
     const clientId = page.url().split("/").pop()!;
 
-    // Change stage via direct API call (bypasses form issues)
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const patchResp = await page.request.patch(`${baseUrl}/api/clients/${clientId}`, {
-      data: { stage: "qualified" },
-    });
-    expect(patchResp.status()).toBe(200);
-
-    // Navigate to detail and verify
-    await page.goto(`/clients/${clientId}`);
+    // Navigate to edit page
+    await page.goto(`/clients/${clientId}/edit`);
     await page.waitForLoadState("networkidle");
-    await expect(page.locator("h1")).toContainText("Stage Change");
+
+    // Select new stage from dropdown
+    const stageSelect = page.locator('select[name="stage"]');
+    await expect(stageSelect).toBeVisible({ timeout: 5000 });
+    await stageSelect.selectOption("qualified");
+
+    // Click save
+    const submitBtn = page.locator('[data-testid="client-edit-submit"]');
+    await expect(submitBtn).toBeVisible();
+    await submitBtn.click();
+
+    // Should navigate to detail page
+    await page.waitForURL(new RegExp(`/clients/${clientId}$`), { timeout: 10000 });
+    await page.waitForLoadState("networkidle");
+
+    // Verify stage persisted — refresh and check
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    const pageText = await page.locator("body").innerText();
+    expect(pageText.includes("已确认") || pageText.includes("qualified")).toBe(true);
   });
 
-  // 7. Invalid stage rejected (422)
-  test("7. invalid stage rejected", async ({ page }) => {
+  // 7. Invalid stage blocked at UI level (dropdown only shows valid options)
+  test("7. invalid stage cannot be selected in UI", async ({ page }) => {
     await createClient(page, { name: "Stage Validation", phone: "13400134000" });
-    // createClient navigates to detail page; extract client ID from URL
     const clientId = page.url().split("/").pop()!;
 
-    // Try to set an invalid stage via page.request (has proper cookies)
+    // Navigate to edit page
+    await page.goto(`/clients/${clientId}/edit`);
+    await page.waitForLoadState("networkidle");
+
+    // Verify stage dropdown exists and only contains valid options
+    const stageSelect = page.locator('select[name="stage"]');
+    await expect(stageSelect).toBeVisible();
+
+    // Get all option values
+    const options = await stageSelect.locator("option").all();
+    const optionValues: string[] = [];
+    for (const opt of options) {
+      const val = await opt.getAttribute("value");
+      if (val) optionValues.push(val);
+    }
+
+    // All options should be valid stages
+    const validStages = ["new","qualified","properties_sent","viewing_scheduled","viewed","considering","closed_won","paused","lost","deleted"];
+    for (const v of optionValues) {
+      expect(validStages).toContain(v);
+    }
+    // Invalid stage should NOT be present
+    expect(optionValues).not.toContain("invalid_stage_xyz");
+
+    // Verify API still rejects invalid stage (defense-in-depth)
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const resp = await page.request.patch(`${baseUrl}/api/clients/${clientId}`, {
       data: { stage: "invalid_stage_xyz" },
     });
-
     expect(resp.status()).toBe(422);
   });
 
@@ -210,21 +245,22 @@ test.describe("Client CRUD", () => {
     await otherCtx.close();
   });
 
-  // 11. Unauthenticated access denied (401)
+  // 11. Unauthenticated access through real browser navigation
   test("11. unauthenticated access denied", async ({ browser }) => {
+    // Fresh context with NO auth storage
     const ctx = await browser.newContext({ storageState: undefined });
     const pg = await ctx.newPage();
 
-    // Use page.request for API call (no auth cookies)
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const resp = await pg.request.get(`${baseUrl}/api/clients`);
-    expect(resp.status()).toBe(401);
-
-    // Try accessing client page
-    await pg.goto("/clients").catch(() => {});
-    // Should redirect to login
+    // Navigate to clients page — should redirect to login
+    await pg.goto("/clients", { waitUntil: "networkidle" });
     const url = pg.url();
-    expect(url.includes("/login") || url.includes("/auth")).toBeTruthy();
+    expect(url.includes("/login") || url.includes("/auth")).toBe(true);
+
+    // Also verify API returns 401 for unauthenticated request
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const apiResp = await pg.request.get(`${baseUrl}/api/clients`);
+    expect(apiResp.status()).toBe(401);
+
     await ctx.close();
   });
 
@@ -259,21 +295,36 @@ test.describe("Client CRUD", () => {
   });
 
   // 14. Double submit is safe
-  test("14. double submit is safe", async ({ page }) => {
+  // 14. Double submit safety — only one record created, button disabled during submit
+  test("14. double submit creates only one record", async ({ page }) => {
+    const uniqueName = `DoubleSubmit-${Date.now()}`;
     await page.goto("/clients/new");
-    await page.fill('input[name="name"]', "DoubleSubmit");
+    await page.fill('input[name="name"]', uniqueName);
     await page.fill('input[name="phone"]', "13000130000");
 
     // Click submit
     const submitBtn = page.locator('[data-testid="client-create-submit"]');
     await submitBtn.click();
-    // Try second click rapidly (should be ignored while loading)
-    try { await submitBtn.click({ timeout: 500 }); } catch { /* may be disabled */ }
 
-    // Page should not crash
-    await page.waitForTimeout(3000);
-    const bodyText = await page.locator("body").innerText();
-    expect(bodyText.length).toBeGreaterThan(0);
+    // Button should be disabled immediately after click (loading state)
+    await expect(submitBtn).toBeDisabled();
+
+    // Try clicking again while disabled — should be ignored
+    try { await submitBtn.click({ timeout: 500 }); } catch { /* element is disabled, click rejected */ }
+
+    // Wait for navigation to detail page
+    await page.waitForURL(/\/clients\/[a-f0-9-]+/, { timeout: 15000 });
+
+    // Verify the client was created with our unique name (it appears in page body)
+    await expect(page.locator("h1")).toContainText(uniqueName);
+
+    // Navigate to list and verify only ONE instance of this name
+    await page.goto("/clients");
+    await page.waitForLoadState("networkidle");
+    const listText = await page.locator("body").innerText();
+    // Count occurrences of the unique name — should be exactly 1
+    const occurrences = (listText.match(new RegExp(uniqueName, "g")) || []).length;
+    expect(occurrences).toBe(1);
   });
 
   // 15. Phone/wechat NOT leaked in list view
