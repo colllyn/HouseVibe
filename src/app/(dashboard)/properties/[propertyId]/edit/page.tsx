@@ -18,6 +18,8 @@ async function updateViaApi(propertyId: string, data: Record<string, unknown>) {
 }
 import type { UpdatePropertyInput } from "@/features/properties/schemas";
 import { ArrowLeft, Lock, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { MediaUploader } from "@/components/ui/media-uploader";
+import { MediaGrid } from "@/components/ui/media-grid";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +51,7 @@ export default function EditPropertyPage() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [showPrivate, setShowPrivate] = React.useState(false);
+  const [mediaRefreshKey, setMediaRefreshKey] = React.useState(0);
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<UpdatePropertyInput>({
     resolver: zodResolver(UpdatePropertyInputSchema),
@@ -248,6 +251,19 @@ export default function EditPropertyPage() {
             <label className="flex items-center gap-2 min-h-[44px] cursor-pointer"><input type="checkbox" {...register("is_shared")} className="h-4 w-4 rounded border-input text-primary focus:ring-ring" /><span className="text-sm">上架共享库</span></label>
             <label className="flex items-center gap-2 min-h-[44px] cursor-pointer"><input type="checkbox" {...register("allow_marketing_reuse")} className="h-4 w-4 rounded border-input text-primary focus:ring-ring" /><span className="text-sm">允许营销复用</span></label>
           </div>
+        </section>
+
+        {/* Media */}
+        <section className="space-y-4 rounded-lg border p-4">
+          <h2 className="font-semibold text-sm">房源图片</h2>
+          <MediaUploader
+            propertyId={propertyId}
+            onSuccess={() => setMediaRefreshKey((k) => k + 1)}
+          />
+          <MediaGrid
+            propertyId={propertyId}
+            refreshKey={mediaRefreshKey}
+          />
         </section>
 
         {/* Sensitive Info */}
