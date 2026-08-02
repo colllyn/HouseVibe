@@ -73,10 +73,21 @@ export default defineConfig({
       },
       dependencies: ["setup"],
     },
+    // Property Media E2E
+    {
+      name: "property-media",
+      testMatch: /property-media\.spec\.ts/,
+      fullyParallel: false,
+      use: {
+        browserName: "chromium",
+        storageState: "e2e/.auth/owner.json",
+      },
+      dependencies: ["setup"],
+    },
     // Default chromium (auth, admin, settings E2E — no storageState needed)
     {
       name: "chromium",
-      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters)).*\.spec\.ts$/,
+      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media)).*\.spec\.ts$/,
       use: { browserName: "chromium" },
     },
   ],
