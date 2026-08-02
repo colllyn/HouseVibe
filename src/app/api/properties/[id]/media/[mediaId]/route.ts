@@ -278,7 +278,7 @@ export async function DELETE(
 
     // Soft delete via RPC (SECURITY DEFINER, properly handles RLS)
     const now = new Date().toISOString();
-    const { data: deletedMedia, error: rpcErr } = await client
+    const { data: _deletedMedia, error: rpcErr } = await client
       .rpc("soft_delete_media", { p_media_id: mediaId });
 
     if (rpcErr) {

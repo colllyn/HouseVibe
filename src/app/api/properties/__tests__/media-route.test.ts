@@ -24,6 +24,7 @@ let mockStorageFrom: ReturnType<typeof vi.fn>;
 let mockUpload: ReturnType<typeof vi.fn>;
 let mockCreateSignedUrl: ReturnType<typeof vi.fn>;
 let mockRemove: ReturnType<typeof vi.fn>;
+let mockRpc: ReturnType<typeof vi.fn>;
 let mockPendingCookies: { name: string; value: string; options: Record<string, unknown> }[];
 
 /**
@@ -133,7 +134,8 @@ function resetMocks() {
   mockUpload = vi.fn();
   mockCreateSignedUrl = vi.fn();
   mockRemove = vi.fn();
-  mockStorageFrom = vi.fn((bucket: string) => ({
+  mockRpc = vi.fn();
+  mockStorageFrom = vi.fn((_bucket: string) => ({
     upload: mockUpload,
     createSignedUrl: mockCreateSignedUrl,
     remove: mockRemove,
@@ -162,7 +164,7 @@ vi.mock("@/lib/supabase/route-handler", () => ({
       client: {
         auth: { getUser: mockGetUser },
         from: mockFrom,
-        rpc: vi.fn(),
+        rpc: mockRpc,
       },
       jsonResponse: mockJsonResponse,
     })
@@ -820,7 +822,7 @@ describe("POST /api/properties/[id]/media", () => {
     });
 
     let removeCalled = false;
-    mockRemove.mockImplementation((paths: string[]) => {
+    mockRemove.mockImplementation((_paths: string[]) => {
       removeCalled = true;
       return Promise.resolve({ error: null });
     });
@@ -1452,6 +1454,15 @@ describe("DELETE /api/properties/[id]/media/[mediaId]", () => {
 
   it("returns 200 on successful soft-delete", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+
+    // Mock RPC for soft_delete_media
+    const now = new Date().toISOString();
+    mockRpc = vi.fn((_fn: string, _args: Record<string, unknown>) =>
+      Promise.resolve({
+        data: [{ id: "media-1", property_id: "prop-1", deleted_at: now }],
+        error: null,
+      })
+    );
 
     let queryCount = 0;
     mockFrom = vi.fn((table: string) => {

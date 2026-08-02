@@ -8,7 +8,6 @@
 
 import { test, expect } from "@playwright/test";
 import * as path from "path";
-import * as fs from "fs";
 
 const OWNER_STATE = path.resolve(__dirname, ".auth/owner.json");
 const OTHER_STATE = path.resolve(__dirname, ".auth/other.json");
@@ -41,9 +40,6 @@ async function uploadMedia(
   fileType: string,
   fileSizeBytes: number = 1024,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  // Create a mock file buffer of random bytes
-  const buffer = Buffer.alloc(fileSizeBytes, "x".repeat(fileSizeBytes).slice(0, fileSizeBytes));
-
   const result = await page.evaluate(
     async ({ propId, fName, fType, fSize, base }) => {
       const blob = new Blob([new Uint8Array(fSize).fill(120)], { type: fType });
@@ -185,7 +181,7 @@ test.describe("Property Media", () => {
     const result = await uploadMedia(page, propId, "cover.jpg", "image/jpeg");
     expect(result.status).toBe(201);
     const media = (result.body.data as Record<string, unknown>).media as Record<string, unknown>[];
-    expect(media[0].isCover).toBe(true);
+    expect(media[0]!.isCover).toBe(true);
   });
 
   // 3. List media — returns 200 with signed URLs
@@ -219,7 +215,7 @@ test.describe("Property Media", () => {
     await uploadMedia(page, propId, "room.jpg", "image/jpeg");
     const listResp = await listMedia(page, propId);
     const media = (listResp.body.data as Record<string, unknown>).media as Record<string, unknown>[];
-    const mediaId = media[0].id as string;
+    const mediaId = media[0]!.id as string;
 
     const patchResp = await updateMedia(page, propId, mediaId, {
       sceneTag: "living_room",
@@ -244,11 +240,11 @@ test.describe("Property Media", () => {
 
     const listResp = await listMedia(page, propId);
     const media = (listResp.body.data as Record<string, unknown>).media as Record<string, unknown>[];
-    const firstId = media[0].id as string;
-    const secondId = media[1].id as string;
+    const firstId = media[0]!.id as string;
+    const secondId = media[1]!.id as string;
 
     // Verify first is cover
-    expect(media[0].isCover).toBe(true);
+    expect(media[0]!.isCover).toBe(true);
 
     // Set second as cover
     const patchResp = await updateMedia(page, propId, secondId, { isCover: true });
@@ -272,9 +268,9 @@ test.describe("Property Media", () => {
 
     await uploadMedia(page, propId, "delete-me.jpg", "image/jpeg");
     const listResp = await listMedia(page, propId);
-    const media = (listResp.body.data as Record<string, unknown>).media as Record<string, unknown>[];
+    const media = ((listResp.body.data as Record<string, unknown>)?.media ?? []) as Record<string, unknown>[];
     expect(media).toHaveLength(1);
-    const mediaId = media[0].id as string;
+    const mediaId = media[0]!.id as string;
 
     const delResp = await deleteMedia(page, propId, mediaId);
     expect(delResp.status).toBe(200);
@@ -296,9 +292,9 @@ test.describe("Property Media", () => {
 
     const result = await uploadMedia(page, propId, "document.pdf", "application/pdf");
     expect(result.status).toBe(400);
-    const details = (result.body.error as Record<string, unknown>).details as Record<string, unknown>;
-    const rejections = details?.rejections as Array<{ code: string }>;
-    expect(rejections[0].code).toBe("MEDIA_UNSUPPORTED_TYPE");
+    const details = ((result.body.error as Record<string, unknown>)?.details ?? {}) as Record<string, unknown>;
+    const rejections = (details?.rejections ?? []) as Array<{ code: string }>;
+    expect(rejections[0]!.code).toBe("MEDIA_UNSUPPORTED_TYPE");
   });
 
   // 8. Upload rejected — video deferred
@@ -312,7 +308,7 @@ test.describe("Property Media", () => {
     expect(result.status).toBe(400);
     const details = (result.body.error as Record<string, unknown>).details as Record<string, unknown>;
     const rejections = details?.rejections as Array<{ code: string }>;
-    expect(rejections[0].code).toBe("MEDIA_VIDEO_DEFERRED");
+    expect(rejections[0]!.code).toBe("MEDIA_VIDEO_DEFERRED");
   });
 
   // 9. Partial upload — 207 with rejections
