@@ -1,6 +1,5 @@
 import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
 import type { NextRequest } from "next/server";
-import { ClientStageEnum } from "@/features/properties/schemas";
 
 function urlOrigin(req: NextRequest): string {
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
@@ -17,10 +16,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { data: member } = await client.from("workspace_members")
     .select("workspace_id").eq("user_id", user.id).eq("status", "active").limit(1).single();
   if (!member) return jsonResponse({ error: "无权限" }, { status: 403, headers: h });
-  const { data: clientRow } = await client.from("clients").select("*")
+
+  const { data: clientData } = await client.from("clients")
+    .select("*")
     .eq("id", id).eq("workspace_id", member.workspace_id).is("deleted_at", null).single();
-  if (!clientRow) return jsonResponse({ error: "客户不存在" }, { status: 404, headers: h });
-  return jsonResponse(clientRow, { headers: h });
+  if (!clientData) return jsonResponse({ error: "客户不存在" }, { status: 404, headers: h });
+
+  return jsonResponse(clientData, { headers: h });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -32,75 +34,86 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { data: member } = await client.from("workspace_members")
       .select("workspace_id").eq("user_id", user.id).eq("status", "active").limit(1).single();
     if (!member) return jsonResponse({ error: "无权限" }, { status: 403, headers: h });
+
     const body = await request.json();
 
     // Verify client belongs to workspace
     const { data: existing } = await client.from("clients")
-      .select("id,stage").eq("id", id).eq("workspace_id", member.workspace_id).is("deleted_at", null).single();
+      .select("id").eq("id", id).eq("workspace_id", member.workspace_id).is("deleted_at", null).single();
     if (!existing) return jsonResponse({ error: "客户不存在" }, { status: 404, headers: h });
 
-    // Columns that live on the clients table and are updatable via this handler
-    const updatableCols = [
+    // Parse helpers
+    const parseArray = (v: unknown): string[] | undefined => {
+      if (v === undefined) return undefined;
+      if (typeof v === "string") {
+        const trimmed = v.trim();
+        if (trimmed === "") return [];
+        return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+      }
+      if (Array.isArray(v)) return v.filter(Boolean);
+      return undefined;
+    };
+
+    const parseJson = (v: unknown): unknown | undefined => {
+      if (v === undefined) return undefined;
+      if (typeof v === "string") {
+        try { return JSON.parse(v); } catch { return []; }
+      }
+      return v;
+    };
+
+    // Columns on clients table that can be updated
+    const clientCols = [
       "name", "phone", "wechat", "source_platform",
-      "budget_min", "budget_max", "preferred_districts", "preferred_communities",
+      "budget_min", "budget_max",
+      "preferred_districts", "preferred_communities",
       "bedrooms", "rental_type", "available_from", "minimum_lease_months",
       "pets_required", "cooking_required", "commute_destination",
-      "stage", "next_follow_up_at",
+      "hard_requirements", "soft_preferences", "deal_breakers",
+      "stage", "raw_input_text", "next_follow_up_at",
     ];
 
-    // Type coercion sets
     const boolCols = new Set(["pets_required", "cooking_required"]);
-    const intCols = new Set(["budget_min", "budget_max", "bedrooms", "minimum_lease_months"]);
     const dateCols = new Set(["available_from", "next_follow_up_at"]);
-    const arrayCols = new Set(["preferred_districts", "preferred_communities"]);
+    const intCols = new Set(["budget_min", "budget_max", "bedrooms", "minimum_lease_months"]);
+    const arrayCols = new Set(["preferred_districts", "preferred_communities", "deal_breakers"]);
+    const jsonCols = new Set(["hard_requirements", "soft_preferences"]);
+
     const boolTruthy = new Set([true, "true", "on", "1"]);
     const boolFalsy = new Set([false, "false", "off", "0"]);
 
-    const clientUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
-    for (const f of updatableCols) {
+    for (const f of clientCols) {
       if (!(f in body) || body[f] === undefined) continue;
       let v: unknown = body[f];
 
-      // Boolean coercion
       if (boolCols.has(f)) {
         if (boolTruthy.has(v as string | boolean)) { v = true; }
         else if (boolFalsy.has(v as string | boolean)) { v = false; }
         else { return jsonResponse({ error: `无效的布尔值: ${f}` }, { status: 422, headers: h }); }
-      }
-      // Date columns: empty string → null
-      else if (v === "" && dateCols.has(f)) { v = null; }
-      // Integer columns: empty string → keep existing; string → parse; invalid → 422
-      else if (intCols.has(f)) {
+      } else if (v === "" && (dateCols.has(f) || intCols.has(f))) {
+        v = null;
+      } else if (intCols.has(f)) {
         if (v === "") continue;
         if (typeof v === "string") { const n = parseInt(v, 10); if (isNaN(n)) return jsonResponse({ error: `无效的数值: ${f}` }, { status: 422, headers: h }); v = n; }
-      }
-      // Array columns: comma-separated string → string[]; empty string → []
-      else if (arrayCols.has(f)) {
-        if (typeof v === "string") {
-          v = v.trim() === "" ? [] : v.split(",").map((s: string) => s.trim()).filter(Boolean);
-        } else if (Array.isArray(v)) {
-          // already an array, keep as-is
-        } else {
-          v = [];
-        }
+      } else if (arrayCols.has(f)) {
+        const arr = parseArray(v);
+        if (arr !== undefined) v = arr;
+        else continue;
+      } else if (jsonCols.has(f)) {
+        const j = parseJson(v);
+        if (j !== undefined) v = j;
+        else continue;
       }
 
-      clientUpdate[f] = v;
+      update[f] = v;
     }
 
-    // Validate stage if provided
-    if ("stage" in clientUpdate) {
-      const stageParsed = ClientStageEnum.safeParse(clientUpdate.stage);
-      if (!stageParsed.success) {
-        return jsonResponse({ error: "无效的客户阶段" }, { status: 422, headers: h });
-      }
-      clientUpdate.stage = stageParsed.data;
-    }
-
-    // Update clients table
-    const { error: updateErr } = await client.from("clients").update(clientUpdate)
+    const { error: updateErr } = await client.from("clients")
+      .update(update)
       .eq("id", id).eq("workspace_id", member.workspace_id).is("deleted_at", null);
+
     if (updateErr) return jsonResponse({ error: "更新失败" }, { status: 500, headers: h });
 
     return jsonResponse({ success: true }, { headers: h });
@@ -116,19 +129,15 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const { data: { user } } = await client.auth.getUser();
     if (!user) return jsonResponse({ error: "未登录" }, { status: 401, headers: h });
     const { data: member } = await client.from("workspace_members")
-      .select("workspace_id,role").eq("user_id", user.id).eq("status", "active").limit(1).single();
+      .select("workspace_id").eq("user_id", user.id).eq("status", "active").limit(1).single();
     if (!member) return jsonResponse({ error: "无权限" }, { status: 403, headers: h });
-
-    // Owner check — only the workspace owner can soft-delete clients
-    if (member.role !== "owner") {
-      return jsonResponse({ error: "只有工作区创建者才能删除客户" }, { status: 403, headers: h });
-    }
 
     const now = new Date().toISOString();
     const { error: delErr } = await client.from("clients")
-      .update({ deleted_at: now, updated_at: now })
+      .update({ deleted_at: now, updated_at: now, stage: "deleted" })
       .eq("id", id).eq("workspace_id", member.workspace_id).is("deleted_at", null);
     if (delErr) return jsonResponse({ error: "删除失败" }, { status: 500, headers: h });
+
     return jsonResponse({ success: true }, { headers: h });
   } catch {
     return jsonResponse({ error: "服务器错误" }, { status: 500, headers: h });
