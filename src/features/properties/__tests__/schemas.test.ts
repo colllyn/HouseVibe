@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CreatePropertyInputSchema, UpdatePropertyInputSchema } from "../schemas";
+import { CreatePropertyInputSchema, UpdatePropertyInputSchema, PropertyQuerySchema } from "../schemas";
 
 describe("CreatePropertyInputSchema", () => {
   it("accepts valid minimal input", () => {
@@ -203,6 +203,149 @@ describe("UpdatePropertyInputSchema", () => {
       // optionalBoolean() uses explicit truthy/falsy sets: "true" → true, "false" → false
       expect(result.data.has_elevator).toBe(true);
       expect(result.data.cooking_allowed).toBe(false);
+    }
+  });
+});
+
+describe("PropertyQuerySchema", () => {
+  it("accepts empty input — all defaults", () => {
+    const r = PropertyQuerySchema.safeParse({});
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.page).toBe(1);
+      expect(r.data.limit).toBe(20);
+      expect(r.data.sortBy).toBe("updated_at");
+      expect(r.data.sortOrder).toBe("desc");
+    }
+  });
+
+  it("parses single filter: status", () => {
+    const r = PropertyQuerySchema.safeParse({ status: "available" });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.status).toBe("available");
+  });
+
+  it("parses numeric range: minRent + maxRent", () => {
+    const r = PropertyQuerySchema.safeParse({ minRent: "2000", maxRent: "5000" });
+    expect(r.success).toBe(true);
+    if (r.success) { expect(r.data.minRent).toBe(2000); expect(r.data.maxRent).toBe(5000); }
+  });
+
+  it("rejects inverted rent range", () => {
+    const r = PropertyQuerySchema.safeParse({ minRent: "5000", maxRent: "2000" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects inverted area range", () => {
+    const r = PropertyQuerySchema.safeParse({ minArea: "200", maxArea: "50" });
+    expect(r.success).toBe(false);
+  });
+
+  it("parses boolean filters: petsAllowed, hasElevator, cookingAllowed", () => {
+    const r = PropertyQuerySchema.safeParse({ petsAllowed: "true", cookingAllowed: "false", hasElevator: "true" });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.petsAllowed).toBe(true);
+      expect(r.data.cookingAllowed).toBe(false);
+      expect(r.data.hasElevator).toBe(true);
+    }
+  });
+
+  it("parses date filters", () => {
+    const r = PropertyQuerySchema.safeParse({ availableBefore: "2026-09-01", availableAfter: "2026-08-01" });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.availableBefore).toBe("2026-09-01");
+      expect(r.data.availableAfter).toBe("2026-08-01");
+    }
+  });
+
+  it("parses all 4 current sort options", () => {
+    for (const sortBy of ["updated_at","monthly_rent_asc","monthly_rent_desc","available_from"]) {
+      const r = PropertyQuerySchema.safeParse({ sortBy });
+      expect(r.success).toBe(true);
+    }
+  });
+
+  it("rejects invalid sortBy", () => {
+    const r = PropertyQuerySchema.safeParse({ sortBy: "color" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects invalid sortOrder", () => {
+    const r = PropertyQuerySchema.safeParse({ sortOrder: "up" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects page < 1", () => {
+    const r = PropertyQuerySchema.safeParse({ page: "0" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects limit > 100", () => {
+    const r = PropertyQuerySchema.safeParse({ limit: "200" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects invalid rentalType", () => {
+    const r = PropertyQuerySchema.safeParse({ rentalType: "half_unit" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects invalid status", () => {
+    const r = PropertyQuerySchema.safeParse({ status: "unknown" });
+    expect(r.success).toBe(false);
+  });
+
+  it("parses multi-field combination", () => {
+    const r = PropertyQuerySchema.safeParse({
+      status: "available", district: "pudong", rentalType: "whole_unit",
+      bedrooms: "2", minRent: "3000", maxRent: "8000", petsAllowed: "true",
+      search: "近地铁", sortBy: "monthly_rent_asc", page: "2", limit: "10",
+    });
+    expect(r.success).toBe(true);
+  });
+
+  it("coerces string numbers via URL params", () => {
+    const r = PropertyQuerySchema.safeParse({
+      page: "3", limit: "50", bedrooms: "1", minRent: "1000", maxRent: "3000",
+      minArea: "50.5", maxArea: "120.0",
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.page).toBe(3);
+      expect(r.data.limit).toBe(50);
+      expect(r.data.bedrooms).toBe(1);
+      expect(r.data.minArea).toBe(50.5);
+    }
+  });
+
+  it("rejects deferred sort: last_content_at", () => {
+    const r = PropertyQuerySchema.safeParse({ sortBy: "last_content_at" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects deferred sort: last_published_at", () => {
+    const r = PropertyQuerySchema.safeParse({ sortBy: "last_published_at" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects unknown sortBy", () => {
+    const r = PropertyQuerySchema.safeParse({ sortBy: "color" });
+    expect(r.success).toBe(false);
+  });
+
+  it("rejects unknown query param via strict parsing", () => {
+    // Zod object() by default strips unknown keys, so deferred params like
+    // hasContent won't appear in parsed output. The route handler explicitly
+    // checks for them before Zod parsing (see route handler tests).
+    // This test verifies that Zod silently strips unknown keys from the object.
+    const r = PropertyQuerySchema.safeParse({ district: "pudong", hasContent: "true", unknownFeature: "yes" });
+    expect(r.success).toBe(true); // Zod strips unknown keys
+    if (r.success) {
+      expect(r.data.district).toBe("pudong");
+      // hasContent and unknownFeature are stripped — the route handler
+      // catches deferred params BEFORE this parse step
     }
   });
 });

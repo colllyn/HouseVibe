@@ -244,6 +244,92 @@ describe("POST /api/properties", () => {
 });
 
 // ===========================================================================
+// GET /api/properties — filter, sort, pagination, deferred params
+// ===========================================================================
+
+describe("GET /api/properties", () => {
+  let GET: (req: NextRequest) => Promise<Response>;
+
+  beforeEach(async () => {
+    resetMocks();
+    const mod = await import("../route");
+    GET = mod.GET;
+  });
+
+  it("returns 422 for deferred param: hasContent", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+
+    const url = new URL("http://localhost/api/properties?hasContent=true");
+    const req = new NextRequest(url);
+    const res = await GET(req);
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe("DEFERRED_FEATURE");
+    expect(body.error.message).toContain("hasContent");
+  });
+
+  it("returns 422 for deferred sort value: last_content_at (Zod allowlist rejects)", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+
+    const url = new URL("http://localhost/api/properties?sortBy=last_content_at");
+    const req = new NextRequest(url);
+    const res = await GET(req);
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    // Rejected by Zod PropertySortByEnum allowlist — not in [updated_at, monthly_rent_asc, monthly_rent_desc, available_from]
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("returns 422 for deferred sort value: last_published_at (Zod allowlist rejects)", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+
+    const url = new URL("http://localhost/api/properties?sortBy=last_published_at");
+    const req = new NextRequest(url);
+    const res = await GET(req);
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("returns 401 when unauthenticated (before deferred check)", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
+
+    const url = new URL("http://localhost/api/properties");
+    const req = new NextRequest(url);
+    const res = await GET(req);
+
+    expect(res.status).toBe(401);
+  });
+
+  it("passes deferred check for valid params", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+
+    const url = new URL("http://localhost/api/properties?district=pudong&sortBy=updated_at&page=1&limit=10");
+    const req = new NextRequest(url);
+    const res = await GET(req);
+
+    // The deferred check passes; subsequent DB query may fail but deferred check should not block
+    expect(res.status).not.toBe(422);
+    // May be 500 (DB query fails in mock) or 200 — either way, not a DEFERRED_FEATURE rejection
+  });
+
+  it("rejects unknown sortBy via Zod validation", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+
+    const url = new URL("http://localhost/api/properties?sortBy=color");
+    const req = new NextRequest(url);
+    const res = await GET(req);
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+  });
+});
+
+// ===========================================================================
 // PATCH /api/properties/[id]
 // ===========================================================================
 

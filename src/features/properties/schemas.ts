@@ -164,3 +164,55 @@ export const UpdatePropertyInputSchema = z.object({
 });
 
 export type UpdatePropertyInput = z.infer<typeof UpdatePropertyInputSchema>;
+
+// --- Query / Filter Schema (§7.4) ---
+// P2-PROP-002 scope: 15 executable filters + 4 executable sorts.
+// Deferred (Phase 3 content_factory): hasContent, last_content_at, last_published_at
+
+export const PropertySortByEnum = z.enum([
+  "updated_at",
+  "monthly_rent_asc",
+  "monthly_rent_desc",
+  "available_from",
+]);
+
+export type PropertySortBy = z.infer<typeof PropertySortByEnum>;
+
+export const PropertyQuerySchema = z.object({
+  // Filters
+  status: PropertyStatusEnum.optional(),
+  district: z.string().optional(),
+  city: z.string().optional(),
+  businessArea: z.string().optional(),
+  communityName: z.string().optional(),
+  rentalType: z.enum(["whole_unit", "shared"]).optional(),
+  bedrooms: z.coerce.number().int().min(0).max(20).optional(),
+  minRent: z.coerce.number().int().min(0).optional(),
+  maxRent: z.coerce.number().int().min(0).optional(),
+  minArea: z.coerce.number().positive().optional(),
+  maxArea: z.coerce.number().positive().optional(),
+  petsAllowed: optionalBoolean(),
+  cookingAllowed: optionalBoolean(),
+  hasElevator: optionalBoolean(),
+  availableBefore: z.string().optional(),
+  availableAfter: z.string().optional(),
+  isShared: optionalBoolean(),
+  subwayText: z.string().optional(),
+  search: z.string().min(1).max(200).optional(),
+
+  // Pagination
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+
+  // Sort
+  sortBy: PropertySortByEnum.default("updated_at"),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+}).refine(
+  (d) => d.minRent == null || d.maxRent == null || d.minRent <= d.maxRent,
+  { message: "minRent 不能大于 maxRent", path: ["minRent"] }
+).refine(
+  (d) => d.minArea == null || d.maxArea == null || d.minArea <= d.maxArea,
+  { message: "minArea 不能大于 maxArea", path: ["minArea"] }
+);
+
+export type PropertyQuery = z.infer<typeof PropertyQuerySchema>;

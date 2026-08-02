@@ -16,6 +16,7 @@
     "test:e2e:admin": "playwright test e2e/admin-flows.spec.ts",
     "test:e2e:settings": "playwright test e2e/settings-flows.spec.ts",
     "test:e2e:properties": "playwright test --project=setup --project=properties",
+    "test:e2e:property-filters": "playwright test --project=setup --project=property-filters",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",

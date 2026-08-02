@@ -439,18 +439,26 @@
 **Query 参数**:
 - `status` (string, 可选)
 - `district` (string, 可选)
+- `city` (string, 可选)
+- `businessArea` (string, 可选)
+- `communityName` (string, 可选)
 - `rentalType` (string, 可选)
 - `bedrooms` (int, 可选)
 - `minRent` (int, 可选)
 - `maxRent` (int, 可选)
+- `minArea` (numeric, 可选)
+- `maxArea` (numeric, 可选)
 - `petsAllowed` (boolean, 可选)
 - `cookingAllowed` (boolean, 可选)
 - `hasElevator` (boolean, 可选)
 - `availableBefore` (date, 可选)
+- `availableAfter` (date, 可选)
 - `isShared` (boolean, 可选)
-- `search` (string, 可选) - 文本搜索
+- `subwayText` (string, 可选)
+- `hasContent` (boolean, 可选) - 仅 content_factory 用户；非授权用户忽略
+- `search` (string, 可选) - 跨字段文本搜索
 - `page` (int, 默认 1)
-- `limit` (int, 默认 20)
+- `limit` (int, 默认 20, 最大 100)
 - `sortBy` (string, 默认 'updated_at')
 - `sortOrder` (string, 默认 'desc')
 
