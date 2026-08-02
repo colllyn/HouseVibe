@@ -262,9 +262,9 @@ describe("GET /api/clients", () => {
           Promise.resolve({ data: [{ id: "c1", name: "Safe" }], count: 1, error: null }),
       });
       const origSelect = chain.select;
-      chain.select = vi.fn((cols?: string) => {
+      chain.select = vi.fn((cols?: unknown) => {
         if (typeof cols === "string") capturedSelect = cols;
-        return origSelect(cols);
+        return (origSelect as (c: unknown) => unknown)(cols);
       });
       return chain;
     });
@@ -298,7 +298,7 @@ describe("GET /api/clients", () => {
         single: () =>
           Promise.resolve({ data: [{ id: "c1", stage: "qualified" }], count: 1, error: null }),
       });
-      const origEq = chain.eq;
+      const origEq = chain.eq as (...args: unknown[]) => unknown;
       chain.eq = vi.fn((col: string, val: string) => {
         if (col === "stage") stageEqValue = val;
         return origEq(col, val);
@@ -503,7 +503,7 @@ describe("POST /api/clients", () => {
     // Server should use its own workspace_id, not the client-supplied one
     if (capturedPayload) {
       // Either workspace_id is overridden or the request body's workspace_id is ignored
-      const wsId = capturedPayload.workspace_id;
+      const wsId = (capturedPayload as Record<string, unknown>).workspace_id;
       expect(wsId === "ws-1" || wsId === undefined).toBeTruthy();
     }
   });
@@ -535,7 +535,7 @@ describe("POST /api/clients", () => {
     );
 
     if (capturedPayload) {
-      expect(capturedPayload.created_by).toBe("u1");
+      expect((capturedPayload as Record<string, unknown>).created_by).toBe("u1");
     }
   });
 

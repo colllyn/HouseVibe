@@ -20,7 +20,7 @@ describe("MobileBottomNav", () => {
   }
 
   describe("disabled items", () => {
-    const disabledLabels = []; // Phase 2: 客户 is now enabled, all items active
+    const disabledLabels = [] as string[]; // Phase 2: 客户 is now enabled, all items active
 
     it.each(disabledLabels)("%s item has aria-disabled=\"true\"", (label) => {
       render(<MobileBottomNav />);
@@ -87,7 +87,7 @@ describe("DesktopSidebar", () => {
   }
 
   describe("disabled items", () => {
-    const disabledLabels = []; // Phase 2: 客户 is now enabled, all items active
+    const disabledLabels = [] as string[]; // Phase 2: 客户 is now enabled, all items active
 
     it.each(disabledLabels)("%s item has aria-disabled=\"true\"", (label) => {
       render(<DesktopSidebar />);
