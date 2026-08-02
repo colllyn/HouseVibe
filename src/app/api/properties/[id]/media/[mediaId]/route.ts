@@ -139,6 +139,7 @@ export async function PATCH(
     const input = parsed.data;
 
     // If setting isCover = true, use atomic RPC
+    let coverUpdated = false;
     if (input.isCover === true) {
       const { error: coverErr } = await client.rpc("set_media_cover", { p_media_id: mediaId });
       if (coverErr) {
@@ -147,15 +148,58 @@ export async function PATCH(
           { status: 500, headers: h },
         );
       }
+      coverUpdated = true;
     }
 
-    // Build update payload (non-cover fields)
+    // Build update payload (non-cover fields, or unsetting cover)
     const updatePayload: Record<string, unknown> = {};
     if (input.isCover !== undefined && !input.isCover) updatePayload.is_cover = false;
     if (input.sortOrder !== undefined) updatePayload.sort_order = input.sortOrder;
     if (input.sceneTag !== undefined) updatePayload.scene_tag = input.sceneTag;
 
+    // If only cover was set (via RPC) and no other fields, return success
     if (Object.keys(updatePayload).length === 0) {
+      if (coverUpdated) {
+        // Re-fetch the updated media to return with signed URL
+        const refreshQuery = await client
+          .from("property_media")
+          .select("*")
+          .eq("id", mediaId)
+          .eq("workspace_id", workspaceId)
+          .is("deleted_at", null)
+          .single();
+        if (refreshQuery.data) {
+          const updated = refreshQuery.data;
+          const serverClient = await createClient();
+          const expiry = signedUrlExpiry();
+          const expiresAt = new Date(Date.now() + expiry * 1000).toISOString();
+          const { data: signedData } = await serverClient.storage
+            .from("property-private")
+            .createSignedUrl(updated.storage_path, expiry);
+          return jsonResponse(
+            {
+              data: {
+                id: updated.id,
+                propertyId: updated.property_id,
+                storagePath: updated.storage_path,
+                mediaType: updated.media_type,
+                sceneTag: updated.scene_tag,
+                isCover: updated.is_cover,
+                sortOrder: updated.sort_order,
+                width: updated.width,
+                height: updated.height,
+                aiLabels: updated.ai_labels,
+                aiAnalysisStatus: updated.ai_analysis_status,
+                signedUrl: signedData?.signedUrl ?? "",
+                signedUrlExpiresAt: expiresAt,
+                createdAt: updated.created_at,
+              },
+              error: null,
+            },
+            { headers: h },
+          );
+        }
+      }
       return jsonResponse(
         { data: null, error: { code: "VALIDATION_FAILED", message: "未提供要更新的字段" } },
         { status: 400, headers: h },
