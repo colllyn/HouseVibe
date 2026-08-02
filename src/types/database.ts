@@ -1175,6 +1175,50 @@ export type Database = {
         Returns: Json
       }
       revoke_system_admin: { Args: { p_user_id: string }; Returns: Json }
+      set_client_stage: {
+        Args: {
+          p_client_id: string
+          p_new_stage: Database["public"]["Enums"]["client_stage"]
+        }
+        Returns: {
+          available_from: string | null
+          bedrooms: number | null
+          budget_max: number | null
+          budget_min: number | null
+          commute_destination: string | null
+          cooking_required: boolean | null
+          created_at: string
+          created_by: string
+          deal_breakers: string[]
+          deleted_at: string | null
+          first_property_id: string | null
+          hard_requirements: Json
+          id: string
+          last_interaction_at: string | null
+          minimum_lease_months: number | null
+          name: string
+          next_follow_up_at: string | null
+          pets_required: boolean | null
+          phone: string | null
+          preferred_communities: string[]
+          preferred_districts: string[]
+          raw_input_text: string | null
+          rental_type: string | null
+          soft_preferences: Json
+          source_content_id: string | null
+          source_platform: string | null
+          stage: Database["public"]["Enums"]["client_stage"]
+          updated_at: string
+          wechat: string | null
+          workspace_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "clients"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       set_media_cover: {
         Args: { p_media_id: string }
         Returns: {
@@ -1204,6 +1248,33 @@ export type Database = {
       }
       set_media_sort_order: {
         Args: { p_media_id: string; p_new_sort_order: number }
+        Returns: {
+          ai_analysis_status: Database["public"]["Enums"]["ai_analysis_status"]
+          ai_analyzed_at: string | null
+          ai_labels: Json | null
+          created_at: string
+          deleted_at: string | null
+          duration_seconds: number | null
+          height: number | null
+          id: string
+          is_cover: boolean
+          media_type: Database["public"]["Enums"]["media_type"]
+          property_id: string
+          scene_tag: string | null
+          sort_order: number
+          storage_path: string
+          width: number | null
+          workspace_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "property_media"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      soft_delete_media: {
+        Args: { p_media_id: string }
         Returns: {
           ai_analysis_status: Database["public"]["Enums"]["ai_analysis_status"]
           ai_analyzed_at: string | null
