@@ -42,6 +42,23 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .select("id").eq("id", id).eq("workspace_id", member.workspace_id).is("deleted_at", null).single();
     if (!existing) return jsonResponse({ error: "客户不存在" }, { status: 404, headers: h });
 
+    // Validate stage if provided
+    const validStages = ["new","qualified","properties_sent","viewing_scheduled","viewed","considering","closed_won","paused","lost","deleted"];
+    if (body.stage !== undefined && !validStages.includes(body.stage)) {
+      return jsonResponse(
+        { data: null, error: { code: "VALIDATION_FAILED", message: `无效的客户阶段: ${body.stage}` } },
+        { status: 422, headers: h },
+      );
+    }
+
+    // Validate name if provided
+    if (body.name !== undefined && (typeof body.name !== "string" || body.name.trim().length === 0)) {
+      return jsonResponse(
+        { data: null, error: { code: "VALIDATION_FAILED", message: "客户姓名不能为空" } },
+        { status: 422, headers: h },
+      );
+    }
+
     // Parse helpers
     const parseArray = (v: unknown): string[] | undefined => {
       if (v === undefined) return undefined;
@@ -129,8 +146,26 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     const { data: { user } } = await client.auth.getUser();
     if (!user) return jsonResponse({ error: "未登录" }, { status: 401, headers: h });
     const { data: member } = await client.from("workspace_members")
-      .select("workspace_id").eq("user_id", user.id).eq("status", "active").limit(1).single();
+      .select("workspace_id, role").eq("user_id", user.id).eq("status", "active").limit(1).single();
     if (!member) return jsonResponse({ error: "无权限" }, { status: 403, headers: h });
+
+    // Verify client exists and belongs to workspace (not already deleted)
+    const { data: existing } = await client.from("clients")
+      .select("id, stage").eq("id", id).eq("workspace_id", member.workspace_id).is("deleted_at", null).single();
+    if (!existing) {
+      return jsonResponse(
+        { data: null, error: { code: "RESOURCE_NOT_FOUND", message: "客户不存在" } },
+        { status: 404, headers: h },
+      );
+    }
+
+    // Cannot delete closed_won clients
+    if (existing.stage === "closed_won") {
+      return jsonResponse(
+        { data: null, error: { code: "VALIDATION_FAILED", message: "已成交客户不能直接删除" } },
+        { status: 422, headers: h },
+      );
+    }
 
     const now = new Date().toISOString();
     const { error: delErr } = await client.from("clients")
@@ -138,7 +173,10 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
       .eq("id", id).eq("workspace_id", member.workspace_id).is("deleted_at", null);
     if (delErr) return jsonResponse({ error: "删除失败" }, { status: 500, headers: h });
 
-    return jsonResponse({ success: true }, { headers: h });
+    return jsonResponse(
+      { data: { deleted: true, clientId: id, deletedAt: now }, error: null },
+      { headers: h },
+    );
   } catch {
     return jsonResponse({ error: "服务器错误" }, { status: 500, headers: h });
   }

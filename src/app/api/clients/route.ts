@@ -129,6 +129,23 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
+    // Validate required fields
+    if (!body.name || typeof body.name !== "string" || body.name.trim().length === 0) {
+      return jsonResponse(
+        { data: null, error: { code: "VALIDATION_FAILED", message: "客户姓名不能为空" } },
+        { status: 422, headers: h },
+      );
+    }
+
+    // Validate stage if provided
+    const validStages = ["new","qualified","properties_sent","viewing_scheduled","viewed","considering","closed_won","paused","lost","deleted"];
+    if (body.stage && !validStages.includes(body.stage)) {
+      return jsonResponse(
+        { data: null, error: { code: "VALIDATION_FAILED", message: `无效的客户阶段: ${body.stage}` } },
+        { status: 422, headers: h },
+      );
+    }
+
     // Parse comma-separated strings to arrays
     const parseArray = (v: unknown): string[] | null => {
       if (typeof v === "string") {

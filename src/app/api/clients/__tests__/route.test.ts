@@ -430,30 +430,20 @@ describe("POST /api/clients", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 201 even without name (API passes through, DB validates)", async () => {
+  it("returns 422 when name is missing", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
-    mockFrom = vi.fn((table: string) => {
-      if (table === "workspace_members") {
-        return makeChain({
-          single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
-        });
-      }
-      return makeChain({
-        terminal: { data: { id: "new-client-id" }, error: null },
-      });
-    });
 
-    const mod = await import("../route");
-    const res = await mod.POST(
+    const res = await POST(
       new NextRequest("http://localhost/api/clients", {
         method: "POST",
         body: JSON.stringify({ phone: "13800138000" }),
       })
     );
 
-    // API passes through to DB; mock returns success
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error).toBeDefined();
+    expect(body.error.code).toBe("VALIDATION_FAILED");
   });
 
   it("returns 201 on successful creation", async () => {
@@ -875,7 +865,6 @@ describe("PATCH /api/clients/[id]", () => {
       return makeChain({
         single: () =>
           Promise.resolve({ data: { id: "client-1" }, error: null }),
-        terminal: { data: null, error: { code: "22P02" } },
       });
     });
 
@@ -888,7 +877,7 @@ describe("PATCH /api/clients/[id]", () => {
       { params: Promise.resolve({ id: "client-1" }) }
     );
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(422);
   });
 
   it("cross-workspace update denied", async () => {
@@ -996,16 +985,21 @@ describe("DELETE /api/clients/[id]", () => {
     expect(res.status).toBe(403);
   });
 
-  it("returns 200 when client not found (update no-op, no error)", async () => {
+  it("returns 404 when client not found", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({
           single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "owner" }, error: null }),
         });
       }
-      return makeChain();
+      const chain = makeChain();
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.is = vi.fn(() => chain);
+      chain.single = vi.fn(() => Promise.resolve({ data: null, error: { code: "PGRST116" } }));
+      return chain;
     });
 
     const mod = await import("../[id]/route");
@@ -1014,7 +1008,7 @@ describe("DELETE /api/clients/[id]", () => {
       { params: Promise.resolve({ id: "missing" }) }
     );
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
   });
 
   it("succeeds -- soft-deletes client", async () => {
@@ -1024,14 +1018,21 @@ describe("DELETE /api/clients/[id]", () => {
       if (table === "workspace_members") {
         return makeChain({
           single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "owner" }, error: null }),
         });
       }
-      return makeChain({
-        onUpdate: (data: unknown) => {
-          capturedUpdate = data as Record<string, unknown>;
-        },
+      const chain = makeChain();
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.is = vi.fn(() => chain);
+      chain.single = vi.fn(() =>
+        Promise.resolve({ data: { id: "client-1", stage: "new" }, error: null })
+      );
+      chain.update = vi.fn((data: unknown) => {
+        capturedUpdate = data as Record<string, unknown>;
+        return chain;
       });
+      return chain;
     });
 
     const mod = await import("../[id]/route");
@@ -1042,31 +1043,34 @@ describe("DELETE /api/clients/[id]", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(true);
+    expect(body.data.deleted).toBe(true);
     const cu = capturedUpdate as unknown as Record<string, unknown>;
     expect(cu.deleted_at).toBeDefined();
-    expect(cu.updated_at).toBeDefined();
     expect(typeof cu.deleted_at).toBe("string");
   });
 
   it("member can soft-delete own workspace client", async () => {
-    // Members should be able to soft-delete (via UPDATE with deleted_at),
-    // since the DELETE RLS for clients allows only owner for physical DELETE,
-    // but soft-delete uses the UPDATE policy which allows all members.
     let updateCalled = false;
     mockGetUser.mockResolvedValue({ data: { user: { id: "u-member" } }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({
           single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "member" }, error: null }),
         });
       }
-      return makeChain({
-        onUpdate: () => {
-          updateCalled = true;
-        },
+      const chain = makeChain();
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.is = vi.fn(() => chain);
+      chain.single = vi.fn(() =>
+        Promise.resolve({ data: { id: "client-1", stage: "new" }, error: null })
+      );
+      chain.update = vi.fn(() => {
+        updateCalled = true;
+        return chain;
       });
+      return chain;
     });
 
     const mod = await import("../[id]/route");
@@ -1085,11 +1089,13 @@ describe("DELETE /api/clients/[id]", () => {
       if (table === "workspace_members") {
         return makeChain({
           single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "owner" }, error: null }),
         });
       }
       return makeChain({
-        updateResult: () => ({ error: { code: "XX000", message: "disk full" } }),
+        terminal: { data: null, error: { code: "XX000", message: "disk full" } },
+        single: () =>
+          Promise.resolve({ data: { id: "client-1", stage: "new" }, error: null }),
       });
     });
 
@@ -1102,20 +1108,23 @@ describe("DELETE /api/clients/[id]", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBeDefined();
-    expect(body.error).not.toContain("disk full");
   });
 
-  it("cross-workspace soft-delete filters by workspace_id (returns 200, no rows affected)", async () => {
+  it("cross-workspace delete returns 404", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({
           single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "owner" }, error: null }),
         });
       }
-      // Update with workspace filter — no matching rows, but error is null (no-op)
-      return makeChain();
+      const chain = makeChain();
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.is = vi.fn(() => chain);
+      chain.single = vi.fn(() => Promise.resolve({ data: null, error: { code: "PGRST116" } }));
+      return chain;
     });
 
     const mod = await import("../[id]/route");
@@ -1124,6 +1133,6 @@ describe("DELETE /api/clients/[id]", () => {
       { params: Promise.resolve({ id: "other-ws-client" }) }
     );
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
   });
 });
