@@ -230,3 +230,51 @@ export const UpdateMediaInputSchema = z.object({
   sceneTag: z.string().max(50, "场景标签最多 50 字").optional(),
 });
 export type UpdateMediaInput = z.infer<typeof UpdateMediaInputSchema>;
+
+// --- Client Schemas (P2-CLIENT-001) ---
+
+export const ClientStageEnum = z.enum([
+  "new", "qualified", "properties_sent", "viewing_scheduled",
+  "viewed", "considering", "closed_won", "paused", "lost", "deleted",
+]);
+export type ClientStage = z.infer<typeof ClientStageEnum>;
+
+export const CreateClientInputSchema = z.object({
+  name: z.string().min(1, "姓名不能为空").max(100),
+  phone: z.string().optional(),
+  wechat: z.string().optional(),
+  source_platform: z.string().optional(),
+  budget_min: z.coerce.number().int().positive().optional(),
+  budget_max: z.coerce.number().int().positive().optional(),
+  preferred_districts: z.string().optional(), // comma-separated, converted to TEXT[]
+  preferred_communities: z.string().optional(),
+  bedrooms: z.coerce.number().int().min(0).max(20).optional(),
+  rental_type: z.string().optional(),
+  available_from: z.string().optional(),
+  minimum_lease_months: z.coerce.number().int().positive().optional(),
+  pets_required: z.coerce.boolean().optional(),
+  cooking_required: z.coerce.boolean().optional(),
+  commute_destination: z.string().optional(),
+  stage: ClientStageEnum.optional(),
+  next_follow_up_at: z.string().optional(),
+});
+
+export const UpdateClientInputSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  phone: z.string().optional(),
+  wechat: z.string().optional(),
+  source_platform: z.string().optional(),
+  budget_min: z.coerce.number().int().positive().optional(),
+  budget_max: z.coerce.number().int().positive().optional(),
+  preferred_districts: z.string().optional(),
+  preferred_communities: z.string().optional(),
+  bedrooms: z.coerce.number().int().min(0).max(20).optional(),
+  rental_type: z.string().optional(),
+  available_from: z.string().optional(),
+  minimum_lease_months: z.coerce.number().int().positive().optional(),
+  pets_required: z.coerce.boolean().optional(),
+  cooking_required: z.coerce.boolean().optional(),
+  commute_destination: z.string().optional(),
+  stage: ClientStageEnum.optional(),
+  next_follow_up_at: z.string().optional(),
+});

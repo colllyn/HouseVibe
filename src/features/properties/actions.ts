@@ -65,6 +65,38 @@ function signedUrlExpiry(): number {
   return parseInt(process.env.MEDIA_SIGNED_URL_EXPIRY_SECONDS || "3600", 10);
 }
 
+/**
+ * Client read-only query helpers.
+ * All write operations (create/update/delete) go through Route Handlers
+ * per API Contract: POST/PATCH/DELETE /api/clients.
+ */
+
+// List columns — excludes phone and wechat (sensitive).
+const CLIENT_LIST_COLS = "id,workspace_id,created_by,name,source_platform,source_content_id,first_property_id,budget_min,budget_max,preferred_districts,preferred_communities,bedrooms,rental_type,available_from,minimum_lease_months,pets_required,cooking_required,commute_destination,hard_requirements,soft_preferences,deal_breakers,stage,raw_input_text,next_follow_up_at,last_interaction_at,created_at,updated_at,deleted_at";
+
+export async function getClientById(clientId: string) {
+  try {
+    const { workspaceId } = await getUserWorkspaceId();
+    const supabase = await createClient();
+    const { data: client } = await supabase
+      .from("clients").select("*")
+      .eq("id", clientId).eq("workspace_id", workspaceId).is("deleted_at", null).single();
+    return client ?? null;
+  } catch { return null; }
+}
+
+export async function getClients() {
+  try {
+    const { workspaceId } = await getUserWorkspaceId();
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("clients").select(CLIENT_LIST_COLS)
+      .eq("workspace_id", workspaceId).is("deleted_at", null)
+      .order("updated_at", { ascending: false });
+    return data ?? [];
+  } catch { return []; }
+}
+
 export async function getPropertyMedia(propertyId: string) {
   try {
     const { workspaceId } = await getUserWorkspaceId();
