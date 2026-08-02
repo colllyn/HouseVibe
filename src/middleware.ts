@@ -1,45 +1,34 @@
 import { updateSession } from "@/lib/supabase/middleware";
-import type { NextRequest } from "next/server";
+import { type NextRequest, NextResponse } from "next/server";
 
-/**
- * Next.js 15 Middleware
- *
- * Responsibilities (and ONLY these):
- * - Refresh Supabase session cookies
- * - Disable public caching for auth-sensitive responses
- *
- * Route protection and authorization decisions happen in:
- * - Layout components (src/app/(dashboard)/layout.tsx)
- * - Server Actions (src/features/auth/actions.ts)
- * - Database RLS policies
- *
- * This middleware does NOT:
- * - Query business data
- * - Check feature entitlements
- * - Execute complex authorization
- * - Use Service Role
- * - Call external AI services
- */
+const PROTECTED = ["/dashboard","/properties","/clients","/matches","/tasks","/settings","/admin","/collaboration-requests"];
+
+function isProtected(pathname: string): boolean {
+  return PROTECTED.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
+
 export async function middleware(request: NextRequest) {
-  // Refresh the session (updates cookies if needed)
-  const response = await updateSession(request);
+  const { pathname } = request.nextUrl;
 
-  // Auth-sensitive responses must not be publicly cached
+  // Refresh session (validates with Supabase Auth, updates cookies)
+  const response = await updateSession(request);
   response.headers.set("Cache-Control", "private, no-store");
+
+  if (isProtected(pathname)) {
+    // Re-read cookies after updateSession — they may have been refreshed
+    const hasValidSession = request.cookies.getAll().some(
+      (c) => c.name.startsWith("sb-") && c.name.endsWith("-auth-token") && c.value.length > 20
+    );
+    if (!hasValidSession) {
+      const loginUrl = new URL("/login", request.url);
+      loginUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
 
   return response;
 }
 
-/**
- * Matcher: applies to all routes EXCEPT static assets.
- * - _next/static: Next.js static files
- * - _next/image: Next.js image optimization
- * - favicon.ico: browser favicon
- * - *.svg, *.png, *.jpg, *.jpeg, *.gif, *.webp: static images
- * - *.woff, *.woff2: fonts
- */
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff|woff2)$).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff|woff2)$).*)"],
 };

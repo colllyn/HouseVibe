@@ -45,8 +45,27 @@ export default defineConfig({
     timeout: 120000,
   },
   projects: [
+    // Auth state setup — runs first, creates storageState files
+    {
+      name: "setup",
+      testMatch: /auth\.setup\.ts/,
+    },
+    // Property E2E — uses saved auth state from setup
+    // fullyParallel=false: tests share workspace; parallel deletes cause cache races
+    {
+      name: "properties",
+      testMatch: /property-flows\.spec\.ts/,
+      fullyParallel: false,
+      use: {
+        browserName: "chromium",
+        storageState: "e2e/.auth/owner.json",
+      },
+      dependencies: ["setup"],
+    },
+    // Default chromium (auth, admin, settings E2E — no storageState needed)
     {
       name: "chromium",
+      testMatch: /^(?!.*(auth\.setup|property-flows)).*\.spec\.ts$/,
       use: { browserName: "chromium" },
     },
   ],

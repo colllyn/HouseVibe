@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
   const user = await getAuthenticatedUser();
+  if (!user) return null;
   const supabase = await createClient();
 
   const { data: profile, error } = await supabase

@@ -22,7 +22,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "工作台", href: "/dashboard", icon: LayoutDashboard },
   { label: "首页", href: "/", icon: Home },
-  { label: "房源", href: "/properties", icon: Building2, disabled: true },
+  { label: "房源", href: "/properties", icon: Building2 },
   { label: "客户", href: "/clients", icon: Users, disabled: true },
   { label: "设置", href: "/settings/profile", icon: Settings },
 ];

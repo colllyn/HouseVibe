@@ -20,7 +20,7 @@ describe("MobileBottomNav", () => {
   }
 
   describe("disabled items", () => {
-    const disabledLabels = ["房源", "客户"];
+    const disabledLabels = ["客户"]; // Phase 2: 房源 is now enabled
 
     it.each(disabledLabels)("%s item has aria-disabled=\"true\"", (label) => {
       render(<MobileBottomNav />);
@@ -40,19 +40,19 @@ describe("MobileBottomNav", () => {
     it("all disabled items display 即将开放 badge", () => {
       render(<MobileBottomNav />);
       const badges = screen.getAllByText("即将开放");
-      expect(badges.length).toBe(2);
+      expect(badges.length).toBe(1); // Phase 2: only 客户 still disabled
     });
   });
 
   describe("enabled items", () => {
-    it.each(["首页", "我的"])("%s is a <Link> component (renders as <a>)", (label) => {
+    it.each(["首页", "房源", "我的"])("%s is a <Link> component (renders as <a>)", (label) => {
       renderNav();
       const el = screen.getByText(label);
       const anchor = el.closest("a");
       expect(anchor).not.toBeNull();
     });
 
-    it.each(["首页", "我的"])("%s does NOT have aria-disabled", (label) => {
+    it.each(["首页", "房源", "我的"])("%s does NOT have aria-disabled", (label) => {
       render(<MobileBottomNav />);
       const el = screen.getByText(label);
       const disabledAncestor = el.closest('[aria-disabled="true"]');
@@ -70,9 +70,10 @@ describe("MobileBottomNav", () => {
     it("disabled items are NOT links (no link role)", () => {
       render(<MobileBottomNav />);
       const links = screen.getAllByRole("link");
-      expect(links.length).toBe(2);
+      expect(links.length).toBe(3); // Phase 2: 首页, 房源, 我的
       const linkTexts = links.map((l) => l.textContent);
       expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("房源"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("我的"))).toBe(true);
     });
   });
@@ -85,7 +86,7 @@ describe("DesktopSidebar", () => {
   }
 
   describe("disabled items", () => {
-    const disabledLabels = ["房源", "客户"];
+    const disabledLabels = ["客户"]; // Phase 2: 房源 is now enabled
 
     it.each(disabledLabels)("%s item has aria-disabled=\"true\"", (label) => {
       render(<DesktopSidebar />);
@@ -118,12 +119,12 @@ describe("DesktopSidebar", () => {
     it("all disabled items display 即将开放 badge", () => {
       render(<DesktopSidebar />);
       const badges = screen.getAllByText("即将开放");
-      expect(badges.length).toBe(2);
+      expect(badges.length).toBe(1); // Phase 2: only 客户 still disabled
     });
   });
 
   describe("enabled items", () => {
-    it.each(["工作台", "首页", "设置"])("%s is a <Link> component (renders as <a>)", (label) => {
+    it.each(["工作台", "首页", "房源", "设置"])("%s is a <Link> component (renders as <a>)", (label) => {
       render(<DesktopSidebar />);
       const allMatching = screen.getAllByText(label);
       let found = false;
@@ -138,7 +139,7 @@ describe("DesktopSidebar", () => {
       expect(found).toBe(true);
     });
 
-    it.each(["工作台", "首页", "设置"])("%s does NOT have aria-disabled", (label) => {
+    it.each(["工作台", "首页", "房源", "设置"])("%s does NOT have aria-disabled", (label) => {
       render(<DesktopSidebar />);
       const allMatching = screen.getAllByText(label);
       let checked = false;
@@ -168,8 +169,8 @@ describe("DesktopSidebar", () => {
       const linkTexts = links.map((l) => l.textContent);
       expect(linkTexts.some((t) => t?.includes("工作台"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("房源"))).toBe(true); // Phase 2: enabled
       expect(linkTexts.some((t) => t?.includes("设置"))).toBe(true);
-      expect(linkTexts.some((t) => t?.includes("房源"))).toBe(false);
       expect(linkTexts.some((t) => t?.includes("客户"))).toBe(false);
     });
   });

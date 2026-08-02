@@ -51,16 +51,15 @@ describe("getPublicEnv", () => {
   });
 
   it("does NOT expose server secrets", () => {
-    setEnv({ ...VALID_PUBLIC_ENV, SUPABASE_SERVICE_ROLE_KEY: "secret-role" });
+    setEnv({ ...VALID_PUBLIC_ENV, DEEPSEEK_API_KEY: "sk-secret" });
     const keys = Object.keys(getPublicEnv());
-    expect(keys).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(keys).not.toContain("DEEPSEEK_API_KEY");
   });
 });
 
 describe("getServerEnv", () => {
   const VARS: Record<string, string | undefined> = {
     ...VALID_PUBLIC_ENV,
-    SUPABASE_SERVICE_ROLE_KEY: "service-role-key",
     DEEPSEEK_API_KEY: "sk-deepseek-test",
     DEEPSEEK_VISION_BASE_URL_PRIMARY: "https://vision1.example.com",
     DEEPSEEK_VISION_BASE_URL_FALLBACK: "https://vision2.example.com",
@@ -79,7 +78,6 @@ describe("getServerEnv", () => {
     vi.stubGlobal("window", undefined);
     setEnv(VARS);
     const env = getServerEnv();
-    expect(env.SUPABASE_SERVICE_ROLE_KEY).toBe("service-role-key");
     expect(env.DEEPSEEK_API_KEY).toBe("sk-deepseek-test");
   });
 
