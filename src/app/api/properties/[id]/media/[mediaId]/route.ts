@@ -276,16 +276,31 @@ export async function DELETE(
       );
     }
 
-    // Soft delete
+    // Soft delete via RPC (SECURITY DEFINER, properly handles RLS)
     const now = new Date().toISOString();
-    const { error: deleteErr } = await client
-      .from("property_media")
-      .update({ deleted_at: now })
-      .eq("id", mediaId)
-      .eq("workspace_id", workspaceId)
-      .is("deleted_at", null);
+    const { data: deletedMedia, error: rpcErr } = await client
+      .rpc("soft_delete_media", { p_media_id: mediaId });
 
-    if (deleteErr) {
+    if (rpcErr) {
+      const msg = String(rpcErr.message || rpcErr);
+      if (msg.includes("UNAUTHENTICATED")) {
+        return jsonResponse(
+          { data: null, error: { code: "UNAUTHENTICATED", message: "未登录" } },
+          { status: 401, headers: h },
+        );
+      }
+      if (msg.includes("owner")) {
+        return jsonResponse(
+          { data: null, error: { code: "FORBIDDEN", message: "仅工作区所有者可删除媒体文件" } },
+          { status: 403, headers: h },
+        );
+      }
+      if (msg.includes("not found")) {
+        return jsonResponse(
+          { data: null, error: { code: "RESOURCE_NOT_FOUND", message: "媒体文件不存在" } },
+          { status: 404, headers: h },
+        );
+      }
       return jsonResponse(
         { data: null, error: { code: "INTERNAL_ERROR", message: "删除失败" } },
         { status: 500, headers: h },
