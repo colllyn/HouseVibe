@@ -45,3 +45,81 @@ export async function getProperties() {
     return data ?? [];
   } catch { return []; }
 }
+
+interface MediaRecord {
+  id: string;
+  property_id: string;
+  storage_path: string;
+  media_type: string;
+  scene_tag: string | null;
+  is_cover: boolean;
+  sort_order: number;
+  width: number | null;
+  height: number | null;
+  ai_labels: unknown;
+  ai_analysis_status: string;
+  created_at: string;
+}
+
+function signedUrlExpiry(): number {
+  return parseInt(process.env.MEDIA_SIGNED_URL_EXPIRY_SECONDS || "3600", 10);
+}
+
+export async function getPropertyMedia(propertyId: string) {
+  try {
+    const { workspaceId } = await getUserWorkspaceId();
+    const supabase = await createClient();
+
+    const { data: property } = await supabase
+      .from("properties")
+      .select("id")
+      .eq("id", propertyId)
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .single();
+    if (!property) return [];
+
+    const { data: media } = await supabase
+      .from("property_media")
+      .select("*")
+      .eq("property_id", propertyId)
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (!media || media.length === 0) return [];
+
+    const expiry = signedUrlExpiry();
+    const expiresAt = new Date(Date.now() + expiry * 1000).toISOString();
+
+    const results = await Promise.all(
+      (media as MediaRecord[]).map(async (m) => {
+        const { data: signedData } = await supabase.storage
+          .from("property-private")
+          .createSignedUrl(m.storage_path, expiry);
+
+        return {
+          id: m.id,
+          propertyId: m.property_id,
+          storagePath: m.storage_path,
+          mediaType: m.media_type,
+          sceneTag: m.scene_tag,
+          isCover: m.is_cover,
+          sortOrder: m.sort_order,
+          width: m.width,
+          height: m.height,
+          aiLabels: m.ai_labels,
+          aiAnalysisStatus: m.ai_analysis_status,
+          signedUrl: signedData?.signedUrl ?? null,
+          signedUrlExpiresAt: expiresAt,
+          createdAt: m.created_at,
+        };
+      }),
+    );
+
+    return results;
+  } catch {
+    return [];
+  }
+}

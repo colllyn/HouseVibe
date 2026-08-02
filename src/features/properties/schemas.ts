@@ -216,3 +216,17 @@ export const PropertyQuerySchema = z.object({
 );
 
 export type PropertyQuery = z.infer<typeof PropertyQuerySchema>;
+
+// --- Media Schemas (P2-PROP-003) ---
+
+export const ALLOWED_MEDIA_MIME_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+export const MAX_MEDIA_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+export const MAX_MEDIA_PER_PROPERTY = 20;
+export const MAX_FILES_PER_UPLOAD = 5;
+
+export const UpdateMediaInputSchema = z.object({
+  isCover: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  sceneTag: z.string().max(50, "场景标签最多 50 字").optional(),
+});
+export type UpdateMediaInput = z.infer<typeof UpdateMediaInputSchema>;
