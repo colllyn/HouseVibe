@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { getPropertyById } from "@/features/properties/actions";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Building2, MapPin, Lock, Pencil } from "lucide-react";
+import { ArrowLeft, MapPin, Lock, Pencil } from "lucide-react";
+import { CoverImage, MediaGrid, MediaGridSkeleton } from "@/components/ui/media-grid";
 import { DeletePropertyButton } from "./delete-button";
 
 function DetailSkeleton() {
@@ -44,7 +45,9 @@ async function PropertyDetailContent({ propertyId }: { propertyId: string }) {
       </div>
 
       {/* Cover */}
-      <div className="aspect-video bg-muted rounded-lg flex items-center justify-center mb-6"><Building2 className="h-16 w-16 text-muted-foreground/30" /></div>
+      <Suspense fallback={<div className="aspect-video bg-muted rounded-lg mb-6 animate-pulse" />}>
+        <CoverImage propertyId={property.id} className="mb-6" />
+      </Suspense>
 
       {/* Basic Info */}
       <section className="rounded-lg border mb-6"><h2 className="font-semibold text-sm px-4 py-3 border-b">基本信息</h2>
@@ -97,6 +100,16 @@ async function PropertyDetailContent({ propertyId }: { propertyId: string }) {
           <DetailRow label="共享库" value={property.is_shared ? "已上架" : "未上架"} />
           <DetailRow label="营销复用授权" value={property.allow_marketing_reuse ? "已授权" : "未授权"} />
           <DetailRow label="共享有效期" value={property.shared_expires_at} />
+        </div>
+      </section>
+
+      {/* Media Gallery */}
+      <section className="rounded-lg border mb-6">
+        <h2 className="font-semibold text-sm px-4 py-3 border-b">房源图片</h2>
+        <div className="px-2 py-3">
+          <Suspense fallback={<div className="p-4"><MediaGridSkeleton /></div>}>
+            <MediaGrid propertyId={property.id} />
+          </Suspense>
         </div>
       </section>
     </div>
