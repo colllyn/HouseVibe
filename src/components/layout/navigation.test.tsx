@@ -20,7 +20,7 @@ describe("MobileBottomNav", () => {
   }
 
   describe("disabled items", () => {
-    const disabledLabels = ["客户"]; // Phase 2: 房源 is now enabled
+    const disabledLabels = []; // Phase 2: 客户 is now enabled, all items active
 
     it.each(disabledLabels)("%s item has aria-disabled=\"true\"", (label) => {
       render(<MobileBottomNav />);
@@ -39,8 +39,8 @@ describe("MobileBottomNav", () => {
 
     it("all disabled items display 即将开放 badge", () => {
       render(<MobileBottomNav />);
-      const badges = screen.getAllByText("即将开放");
-      expect(badges.length).toBe(1); // Phase 2: only 客户 still disabled
+      const badges = screen.queryAllByText("即将开放");
+      expect(badges.length).toBe(0); // Phase 2: 客户 enabled, no disabled items
     });
   });
 
@@ -70,10 +70,11 @@ describe("MobileBottomNav", () => {
     it("disabled items are NOT links (no link role)", () => {
       render(<MobileBottomNav />);
       const links = screen.getAllByRole("link");
-      expect(links.length).toBe(3); // Phase 2: 首页, 房源, 我的
+      expect(links.length).toBe(4); // Phase 2: 首页, 房源, 客户, 我的
       const linkTexts = links.map((l) => l.textContent);
       expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("房源"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("客户"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("我的"))).toBe(true);
     });
   });
@@ -86,7 +87,7 @@ describe("DesktopSidebar", () => {
   }
 
   describe("disabled items", () => {
-    const disabledLabels = ["客户"]; // Phase 2: 房源 is now enabled
+    const disabledLabels = []; // Phase 2: 客户 is now enabled, all items active
 
     it.each(disabledLabels)("%s item has aria-disabled=\"true\"", (label) => {
       render(<DesktopSidebar />);
@@ -118,8 +119,8 @@ describe("DesktopSidebar", () => {
 
     it("all disabled items display 即将开放 badge", () => {
       render(<DesktopSidebar />);
-      const badges = screen.getAllByText("即将开放");
-      expect(badges.length).toBe(1); // Phase 2: only 客户 still disabled
+      const badges = screen.queryAllByText("即将开放");
+      expect(badges.length).toBe(0); // Phase 2: 客户 enabled, no disabled items
     });
   });
 
@@ -171,7 +172,7 @@ describe("DesktopSidebar", () => {
       expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("房源"))).toBe(true); // Phase 2: enabled
       expect(linkTexts.some((t) => t?.includes("设置"))).toBe(true);
-      expect(linkTexts.some((t) => t?.includes("客户"))).toBe(false);
+      expect(linkTexts.some((t) => t?.includes("客户"))).toBe(true);
     });
   });
 });

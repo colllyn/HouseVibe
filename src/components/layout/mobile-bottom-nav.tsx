@@ -16,7 +16,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "首页", href: "/", icon: LayoutDashboard },
   { label: "房源", href: "/properties", icon: Building2 },
-  { label: "客户", href: "/clients", icon: Users, disabled: true },
+  { label: "客户", href: "/clients", icon: Users },
   { label: "我的", href: "/settings/profile", icon: User },
 ];
 
