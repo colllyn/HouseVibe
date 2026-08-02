@@ -133,7 +133,7 @@ function resetMocks() {
   mockGetUser = vi.fn();
   mockUpload = vi.fn();
   mockCreateSignedUrl = vi.fn();
-  mockRemove = vi.fn();
+  mockRemove = vi.fn(() => Promise.resolve({ error: null }));
   mockRpc = vi.fn();
   mockStorageFrom = vi.fn((_bucket: string) => ({
     upload: mockUpload,
@@ -1155,11 +1155,8 @@ describe("PATCH /api/properties/[id]/media/[mediaId]", () => {
       { params: Promise.resolve({ id: "prop-1", mediaId: "media-2" }) }
     );
 
-    // Two update calls: first unsets existing covers, second sets the new cover
-    expect(updateCalls.length).toBeGreaterThanOrEqual(1);
-    const hasUnset = updateCalls.some((c) => c.includes('"is_cover":false'));
-    const hasSet = updateCalls.some((c) => c.includes('"is_cover":true'));
-    expect(hasUnset || hasSet).toBe(true);
+    // Cover is set via atomic RPC now
+    expect(mockRpc).toHaveBeenCalledWith("set_media_cover", { p_media_id: "media-2" });
   });
 
   it("returns 400 when body is not valid JSON", async () => {
@@ -1492,7 +1489,7 @@ describe("DELETE /api/properties/[id]/media/[mediaId]", () => {
           queryCount++;
           if (queryCount === 1) {
             return Promise.resolve({
-              data: { id: "media-1", property_id: "prop-1" },
+              data: { id: "media-1", property_id: "prop-1", storage_path: "ws-test/u1/abc.jpg" },
               error: null,
             });
           }
