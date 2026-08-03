@@ -184,7 +184,8 @@ SELECT set_config('request.jwt.claim.sub', '', true);
 SELECT is(
   (SELECT count(*)::int FROM public.audit_logs
    WHERE entity_type = 'interaction'
-     AND action = 'interaction_created'),
+     AND action = 'interaction_created'
+     AND entity_id = (SELECT id FROM public.interactions WHERE summary = 'In-person meeting summary')),
   1, '30. create_interaction writes exactly 1 audit log entry'
 );
 

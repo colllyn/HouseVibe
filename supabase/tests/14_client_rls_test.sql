@@ -427,7 +427,8 @@ SELECT set_config('request.jwt.claim.sub', '', true);
 SELECT is(
   (SELECT count(*)::int FROM public.audit_logs
    WHERE entity_type = 'client'
-     AND action = 'client_created'),
+     AND action = 'client_created'
+     AND entity_id = (SELECT id FROM public.clients WHERE name = 'RPC-Created-Client')),
   1, '49. create_client writes exactly 1 client_created audit entry'
 );
 
