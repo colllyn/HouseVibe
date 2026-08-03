@@ -77,6 +77,11 @@ interface ApiError {
 | `TRANSCRIPTION_TOO_LARGE` | 413 | 音频文件超过大小上限 (10MB) | 缩短录音或压缩 |
 | `TRANSCRIPTION_UNSUPPORTED_MEDIA` | 415 | 音频格式不支持 | 使用支持的格式 |
 | `TRANSCRIPTION_TIMEOUT` | 504 | STT 服务超时 | 重试 |
+| `AI_NOT_CONFIGURED` | 503 | DeepSeek API Key 或 Base URL 未配置 | 联系管理员 |
+| `AI_TIMEOUT` | 504 | DeepSeek 请求超时 | 重试 |
+| `AI_RATE_LIMITED` | 502 | DeepSeek API 返回 429 限流 | 稍后重试 |
+| `AI_UPSTREAM_ERROR` | 502 | DeepSeek 5xx 或连接失败 | 重试 |
+| `AI_INVALID_RESPONSE` | 502 | DeepSeek 响应 JSON 解析或 Schema 校验失败 | 重试 |
 | `CONFLICT` | 409 | 资源冲突（如已存在） | 显示冲突信息 |
 | `INTERNAL_ERROR` | 500 | 服务端内部错误 | 重试或联系支持 |
 
@@ -102,7 +107,12 @@ type ErrorCode =
   | 'TRANSCRIPTION_UNSUPPORTED_MEDIA'
   | 'TRANSCRIPTION_TIMEOUT'
   | 'CONFLICT'
-  | 'INTERNAL_ERROR';
+  | 'INTERNAL_ERROR'
+  | 'AI_NOT_CONFIGURED'
+  | 'AI_TIMEOUT'
+  | 'AI_RATE_LIMITED'
+  | 'AI_UPSTREAM_ERROR'
+  | 'AI_INVALID_RESPONSE';
 ```
 
 ### 2.3 AppError 类
@@ -156,12 +166,12 @@ class AppError extends Error {
 
 | 变量 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `SUPABASE_SERVICE_ROLE_KEY` | string | YES | - | 仅服务端使用，绕过 RLS |
-| `DEEPSEEK_API_KEY` | string | YES | - | DeepSeek 文本模型 API Key |
-| `DEEPSEEK_BASE_URL` | URL | YES | https://api.deepseek.com | DeepSeek API 端点 |
-| `DEEPSEEK_VISION_BASE_URL_PRIMARY` | URL | YES | - | DeepSeek-VL 主端点 |
-| `DEEPSEEK_VISION_BASE_URL_FALLBACK` | URL | YES | - | DeepSeek-VL 备用端点 |
-| `DEEPSEEK_VISION_API_KEY` | string | YES | - | 视觉服务 API Key |
+| `SUPABASE_SERVICE_ROLE_KEY` | string | NO* | - | 仅数据库管理/部署/测试工具使用；应用运行时 Route Handler、AI Provider 和应用代码禁止读取（*不属于应用 serverEnvSchema） |
+| `DEEPSEEK_API_KEY` | string | NO* | - | DeepSeek 文本模型 API Key（*AI 功能启用时需要；普通应用无 Key 可运行） |
+| `DEEPSEEK_BASE_URL` | URL | NO | —（Provider 初始化时提供默认值） | DeepSeek API 端点 |
+| `DEEPSEEK_VISION_BASE_URL_PRIMARY` | URL | NO | - | DeepSeek-VL 主端点（仅 P3-AI-005 Vision Provider 需要） |
+| `DEEPSEEK_VISION_BASE_URL_FALLBACK` | URL | NO | - | DeepSeek-VL 备用端点 |
+| `DEEPSEEK_VISION_API_KEY` | string | NO | - | 视觉服务 API Key |
 | `STT_BASE_URL` | URL | COND* | - | STT 服务端点 (*转写功能启用时必填) |
 | `STT_API_KEY` | string | COND* | - | STT API Key |
 | `CRON_SECRET` | string | NO | - | Cron Job 认证密钥 |
@@ -171,8 +181,8 @@ class AppError extends Error {
 
 | 变量 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
-| `DEEPSEEK_TEXT_MODEL_PRIMARY` | string | NO | `deepseek-chat` | 文本主模型 |
-| `DEEPSEEK_TEXT_MODEL_FALLBACK` | string | NO | `deepseek-reasoner` | 文本备用模型 |
+| `DEEPSEEK_MODEL` | string | NO | `deepseek-v4-flash` | 文本主模型 |
+| `DEEPSEEK_FALLBACK_MODEL` | string | NO | `deepseek-v4-pro` | 文本备用模型（Fallback Model） |
 | `DEEPSEEK_VISION_MODEL` | string | NO | `deepseek-vl2` | 视觉模型名 |
 | `DEEPSEEK_VISION_MAX_IMAGES` | integer | NO | `8` | 单次最多分析图片数 |
 | `DEEPSEEK_REQUEST_TIMEOUT_MS` | integer | NO | `45000` | 请求超时 (ms) |
@@ -203,20 +213,21 @@ const envSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().url(),
 
   // Server Secret
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  DEEPSEEK_API_KEY: z.string().min(1),
-  DEEPSEEK_BASE_URL: z.string().url().default('https://api.deepseek.com'),
-  DEEPSEEK_VISION_BASE_URL_PRIMARY: z.string().url(),
-  DEEPSEEK_VISION_BASE_URL_FALLBACK: z.string().url(),
-  DEEPSEEK_VISION_API_KEY: z.string().min(1),
+	  // SUPABASE_SERVICE_ROLE_KEY intentionally excluded (see §3.1).
+  // AI variables are optional per ai-contract v2.0 §12.1 — app starts without them; AI calls fail-closed
+  DEEPSEEK_API_KEY: z.string().min(1).optional(),
+  DEEPSEEK_BASE_URL: z.string().url().optional(),
+  DEEPSEEK_VISION_BASE_URL_PRIMARY: z.string().url().optional(),
+  DEEPSEEK_VISION_BASE_URL_FALLBACK: z.string().url().optional(),
+  DEEPSEEK_VISION_API_KEY: z.string().min(1).optional(),
   STT_BASE_URL: z.string().url().optional(),
   STT_API_KEY: z.string().optional(),
   CRON_SECRET: z.string().optional(),
   INVITE_TOKEN_SECRET: z.string().min(32),
 
   // Optional Server Config
-  DEEPSEEK_TEXT_MODEL_PRIMARY: z.string().default('deepseek-chat'),
-  DEEPSEEK_TEXT_MODEL_FALLBACK: z.string().default('deepseek-reasoner'),
+  DEEPSEEK_MODEL: z.string().default('deepseek-v4-flash'),
+  DEEPSEEK_FALLBACK_MODEL: z.string().default('deepseek-v4-pro'),
   DEEPSEEK_VISION_MODEL: z.string().default('deepseek-vl2'),
   DEEPSEEK_VISION_MAX_IMAGES: z.coerce.number().int().default(8),
   DEEPSEEK_REQUEST_TIMEOUT_MS: z.coerce.number().int().default(45000),
@@ -249,9 +260,9 @@ export function validateEnv(): Env {
 
 1. MUST NOT 在代码中硬编码 API Key。
 2. 模型名称允许通过环境变量覆盖。
-3. `DEEPSEEK_TEXT_MODEL_PRIMARY` 缺失时默认 `deepseek-chat`。
-4. `DEEPSEEK_TEXT_MODEL_FALLBACK` 缺失时默认 `deepseek-reasoner`。
-5. `DEEPSEEK_API_KEY`、视觉服务 Endpoint MUST NOT 提供危险默认值；缺少时应用启动产生清晰错误。
+3. `DEEPSEEK_MODEL` 缺失时默认 `deepseek-v4-flash`。
+4. `DEEPSEEK_FALLBACK_MODEL` 缺失时默认 `deepseek-v4-pro`。
+5. `DEEPSEEK_API_KEY` 及视觉服务变量均为 optional（ai-contract v2.0 §12.1）。应用在无 AI 配置时正常启动；AI 功能调用时 fail-closed（Provider 返回 `AI_NOT_CONFIGURED`）。不得硬编码伪 Key 或空字符串绕过。
 6. 视觉模型由独立 DeepSeek-VL 推理服务提供，MUST NOT 在 Vercel Serverless 内加载模型。
 7. STT 是独立子系统，不属于 LLM。
 8. MUST NOT 重新引入 OpenAI、Anthropic 或 Gemini 的 API Key 或回退路径。

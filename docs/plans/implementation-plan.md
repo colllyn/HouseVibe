@@ -785,9 +785,9 @@
   - 服务端环境变量校验（启动时验证）
   - 客户端安全变量前缀（NEXT_PUBLIC_）校验
   - 缺失必填变量时应用启动报错
-  - 默认值处理（如 DEEPSEEK_TEXT_MODEL_PRIMARY 默认为 deepseek-chat）
+  - 默认值处理（如 DEEPSEEK_MODEL 默认为 deepseek-v4-flash）
 - **验收标准：**
-  - 缺少 DEEPSEEK_API_KEY 时启动报错并输出清晰错误信息
+  - AI 变量（DEEPSEEK_API_KEY 等）为 optional；缺少时不阻止启动，仅在 AI 调用时 fail-closed（参见 ai-contract v2.0 §12）
   - 环境变量类型错误时启动报错
   - 没有把服务端密钥暴露到 `NEXT_PUBLIC_` 前缀
 - **测试要求：** 单元测试覆盖有效配置、缺失必填变量、类型错误、默认值
@@ -1254,28 +1254,40 @@
 #### P3-AI-001：实现 DeepSeekTextProvider 基础实现
 
 - **Owner Agent：** ai-deepseek-engineer
-- **输入文件：** `docs/contracts/ai-contract.md`
-- **允许修改路径：** `src/lib/ai/**`、`docs/handoffs/**`
+- **输入文件：** `docs/contracts/ai-contract.md` v2.0
+- **允许修改路径：** `src/lib/ai/**`、`src/config/env.ts`、`docs/handoffs/**`
 - **依赖任务：** P1-INT-003
 - **具体输出：**
   - `DeepSeekTextProvider` 类实现（extractProperty, extractClient, parsePropertySearch, generateContent 方法）
-  - DeepSeek API 调用（使用 DeepSeek 官方 API 或受控推理端点）
-  - 隐私预处理（调用前移除敏感字段）
-  - JSON Schema 请求约束
-  - Structured Output：返回 JSON -> Zod 校验
+  - DeepSeek API 调用（`POST https://api.deepseek.com/v1/chat/completions`，OpenAI 兼容格式）
+  - **当前模型**：Primary = `deepseek-v4-flash`，Fallback = `deepseek-v4-pro`（核验日期 2026-08-03）
+  - `response_format: { type: "json_object" }` + Prompt 含 JSON 示例 + `max_tokens` 设置
+  - 隐私预处理（调用前移除敏感字段；Provider 仅接受窄类型 DTO）
+  - Structured Output：JSON parse → Zod strict() 校验（`PropertySearchFilterSchema` 等）
   - 统一 Usage 对象（input_tokens, output_tokens, estimated_cost_usd）
-  - 统一错误类型（timeout, rate_limit, invalid_json, provider_error）
-  - 超时处理（DEEPSEEK_REQUEST_TIMEOUT_MS，默认 45000ms）
-  - 失败重试（最多 1 次，重试使用备用 DeepSeek 模型）
+  - 统一错误类型（`AI_NOT_CONFIGURED`, `AI_TIMEOUT`, `AI_RATE_LIMITED`, `AI_UPSTREAM_ERROR`, `AI_INVALID_RESPONSE`, `AI_REQUEST_ABORTED`）— 见 ai-contract §19
+  - 超时处理（`DEEPSEEK_REQUEST_TIMEOUT_MS`，默认 45000ms）
+  - 失败重试（最多 1×；规则见 ai-contract §10.2）
   - Provider 定义为 `deepseek`
+  - **Circuit Breaker Deferred**（不在 P3-AI-001 范围；建议 P3-AI-016）
+  - `src/config/env.ts` 中 AI 变量全部 optional；Provider 初始化时独立 validate
+  - Smoke test 独立文件 + `SMOKE_TEST=true` 门控 + 双重检查；无 `skip`
 - **验收标准：**
-  - 所有方法返回结构化数据
+  - 所有方法返回结构化数据或类型化 Provider Error
   - 不向 DeepSeek 发送敏感字段（owner_phone, client_phone, exact_address 等）
-  - 超时后产生明确错误
-  - 重试切换至备用 DeepSeek 模型
-  - 模型名称不硬编码在业务代码中
-- **测试要求：** 单元测试覆盖 Mock DeepSeek 响应的正常/异常路径，隐私预处理验证
+  - 超时后产生明确 `AI_TIMEOUT` 错误
+  - 重试仅在上游 5xx/429/timeout/网络错误时触发；4xx 不重试
+  - 模型名称不硬编码；通过 env var 读取
+  - 普通 Property 功能无 AI 配置时可正常运行
+  - Unit/CI 无真实 Key 可运行全部测试
+- **测试要求：** 单元测试覆盖 Mock DeepSeek 响应的正常/异常路径，隐私预处理验证，Retry/Abort/Timeout 确定性测试；Smoke 独立命令 `SMOKE_TEST=true npx vitest run --include='**/*.smoke.test.ts'`
 - **风险等级：** P0（AI 核心）
+
+**P3-AI-001 终局决议（2026-08-03）：**
+
+- **Smoke Test**：联网 Smoke Test 为后续独立任务，Owner 为 `integration-engineer`。Smoke 文件与 `package.json` 脚本必须同一任务交付。当前 P3-AI-001 Provider 门禁只使用 Mock；默认 Unit/CI 不需要真实 Key。
+- **Service Role**：`SUPABASE_SERVICE_ROLE_KEY` 不属于应用运行时 `serverEnvSchema`。仅允许数据库管理、部署或测试工具使用。Route Handler、AI Provider 和应用代码禁止读取。
+- **PRD 模型引用**：`ai-contract.md` v2.0 模型合同 supersede PRD 中旧模型引用（`deepseek-chat`、`deepseek-reasoner` 等已废弃名称）。PRD 全文重写登记为 Deferred 文档清理，不阻塞 P3-AI-001 提交。
 
 ---
 

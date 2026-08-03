@@ -57,6 +57,11 @@
 | `TRANSCRIPTION_TOO_LARGE` | 413 | 音频文件超过大小上限 |
 | `TRANSCRIPTION_UNSUPPORTED_MEDIA` | 415 | 音频格式不支持 |
 | `TRANSCRIPTION_TIMEOUT` | 504 | STT 服务超时 |
+| `AI_NOT_CONFIGURED` | 503 | DeepSeek API Key 或 Base URL 未配置 |
+| `AI_TIMEOUT` | 504 | DeepSeek 请求超时 |
+| `AI_RATE_LIMITED` | 502 | DeepSeek API 返回 429（区别于用户级 `RATE_LIMITED`） |
+| `AI_UPSTREAM_ERROR` | 502 | DeepSeek 5xx 或连接失败 |
+| `AI_INVALID_RESPONSE` | 502 | DeepSeek 响应 JSON 解析或 Schema 校验失败 |
 | `PROPERTY_NOT_MARKETING_REUSABLE` | 403 | 房源未授权营销复用 |
 | `CONFLICT` | 409 | 资源冲突 |
 | `RATE_LIMITED` | 429 | 请求频率限制 |
@@ -1063,6 +1068,22 @@
 
 **安全要求**: 只允许白名单字段和操作符。MUST NOT 输出 SQL。
 
+**错误响应**:
+
+| 错误码 | HTTP 状态码 | 说明 |
+|---|---|---|
+| `UNAUTHENTICATED` | 401 | 未登录或 Session 过期 |
+| `FEATURE_NOT_ALLOWED` | 403 | 缺少 `semantic_search` 功能授权 |
+| `VALIDATION_FAILED` | 400 | 请求参数校验失败（query 为空、超长或纯标点） |
+| `RATE_LIMITED` | 429 | 用户请求频率超限 |
+| `AI_TIMEOUT` | 504 | DeepSeek 请求超时 |
+| `AI_UPSTREAM_ERROR` | 502 | DeepSeek 返回 5xx 或连接失败 |
+| `AI_INVALID_RESPONSE` | 502 | DeepSeek 响应 JSON 解析或 Schema 校验失败 |
+| `AI_RATE_LIMITED` | 502 | DeepSeek API 返回 429（区别于用户级 `RATE_LIMITED`） |
+| `INTERNAL_ERROR` | 500 | 服务端内部错误 |
+
+**注意**: 该端点属于 Phase 3 (P3-AI-004)。Phase 2 UI 在收到 404/501 时会 fallback 到文本搜索（见 `property-semantic-search-ui-contract.md` §3.2）。
+
 ---
 
 ### 10.6 POST /api/ai/generate-content
@@ -1130,7 +1151,7 @@
     },
     "copyAllowed": true,
     "complianceStatus": "clean",
-    "model": "deepseek-chat",
+    "model": "deepseek-v4-flash",
     "usage": {
       "inputTokens": 1200,
       "outputTokens": 800,
