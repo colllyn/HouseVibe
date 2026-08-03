@@ -98,6 +98,7 @@ const ownership = {
     "src/app/layout.tsx",
     "src/app/(dashboard)/layout.tsx",
     "src/app/(dashboard)/page.tsx",
+    "src/features/matching/components/",
     "docs/handoffs/"
   ],
   "test-engineer": [

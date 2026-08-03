@@ -20,6 +20,7 @@
     "test:e2e:property-media": "playwright test --project=setup --project=property-media",
     "test:e2e:clients": "playwright test --project=setup --project=clients",
     "test:e2e:client-interactions": "playwright test --project=setup --project=client-interactions",
+    "test:e2e:matching": "playwright test --project=setup --project=matching",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",

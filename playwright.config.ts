@@ -106,10 +106,21 @@ export default defineConfig({
       },
       dependencies: ["setup"],
     },
+    // Property Matching E2E
+    {
+      name: "matching",
+      testMatch: /matching-flows\.spec\.ts/,
+      fullyParallel: false,
+      use: {
+        browserName: "chromium",
+        storageState: "e2e/.auth/owner.json",
+      },
+      dependencies: ["setup"],
+    },
     // Default chromium (auth, admin, settings E2E — no storageState needed)
     {
       name: "chromium",
-      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions)).*\.spec\.ts$/,
+      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows)).*\.spec\.ts$/,
       use: { browserName: "chromium" },
     },
   ],
