@@ -21,7 +21,12 @@ export type ErrorCode =
   | "TRANSCRIPTION_UNSUPPORTED_MEDIA"
   | "TRANSCRIPTION_TIMEOUT"
   | "CONFLICT"
-  | "INTERNAL_ERROR";
+  | "INTERNAL_ERROR"
+  | "AI_NOT_CONFIGURED"
+  | "AI_TIMEOUT"
+  | "AI_RATE_LIMITED"
+  | "AI_UPSTREAM_ERROR"
+  | "AI_INVALID_RESPONSE";
 
 export interface ApiError {
   code: ErrorCode;

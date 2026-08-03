@@ -10,7 +10,7 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     passWithNoTests: true,
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-    exclude: ["node_modules", ".next"],
+    exclude: ["node_modules", ".next", "**/*.smoke.*"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html"],

@@ -1,5 +1,36 @@
 import { z } from "zod";
 
+/** DeepSeek endpoint URLs must use HTTPS. localhost HTTP allowed in dev/test only. */
+function deepseekUrl(label: string) {
+  return z
+    .preprocess(
+      (v) => (v === "" ? undefined : v),
+      z.string().url().optional()
+    )
+    .superRefine((val, ctx) => {
+      if (val === undefined) return; // unconfigured is OK
+      const url = new URL(val);
+      const isLocalhost =
+        url.hostname === "localhost" ||
+        url.hostname === "127.0.0.1" ||
+        url.hostname === "[::1]";
+      if (url.protocol === "https:") return;
+      if (url.protocol === "http:" && isLocalhost) {
+        const nodeEnv = process.env.NODE_ENV || "development";
+        if (nodeEnv === "development" || nodeEnv === "test") return;
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `${label} HTTP localhost only allowed in development/test`,
+        });
+        return;
+      }
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${label} must use HTTPS`,
+      });
+    });
+}
+
 const publicEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
@@ -26,17 +57,22 @@ const serverEnvSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
   NEXT_PUBLIC_APP_URL: z.string().url(),
-  DEEPSEEK_API_KEY: z.string().min(1),
-  DEEPSEEK_BASE_URL: z.string().url().default("https://api.deepseek.com"),
-  DEEPSEEK_VISION_BASE_URL_PRIMARY: z.string().url(),
-  DEEPSEEK_VISION_BASE_URL_FALLBACK: z.string().url(),
-  DEEPSEEK_VISION_API_KEY: z.string().min(1),
+  // All AI variables are optional — app starts without them; AI calls fail-closed
+  DEEPSEEK_API_KEY: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(1).optional()
+  ),
+  DEEPSEEK_BASE_URL: deepseekUrl("DEEPSEEK_BASE_URL"),
+  DEEPSEEK_MODEL: z.string().default("deepseek-v4-flash"),
+  DEEPSEEK_FALLBACK_MODEL: z.string().default("deepseek-v4-pro"),
+  // Vision variables — only P3-AI-005 (Vision Provider) needs them; text Provider ignores
+  DEEPSEEK_VISION_BASE_URL_PRIMARY: deepseekUrl("DEEPSEEK_VISION_BASE_URL_PRIMARY"),
+  DEEPSEEK_VISION_BASE_URL_FALLBACK: deepseekUrl("DEEPSEEK_VISION_BASE_URL_FALLBACK"),
+  DEEPSEEK_VISION_API_KEY: z.string().min(1).optional(),
   STT_BASE_URL: z.string().url().optional(),
   STT_API_KEY: z.string().optional(),
   CRON_SECRET: z.string().optional(),
   INVITE_TOKEN_SECRET: z.string().min(32),
-  DEEPSEEK_TEXT_MODEL_PRIMARY: z.string().default("deepseek-chat"),
-  DEEPSEEK_TEXT_MODEL_FALLBACK: z.string().default("deepseek-reasoner"),
   DEEPSEEK_VISION_MODEL: z.string().default("deepseek-vl2"),
   DEEPSEEK_VISION_MAX_IMAGES: z.coerce.number().int().default(8),
   DEEPSEEK_REQUEST_TIMEOUT_MS: z.coerce.number().int().default(45000),
