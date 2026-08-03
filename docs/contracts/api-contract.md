@@ -714,10 +714,18 @@
       "propertyId": "uuid",
       "score": 85,
       "matchLevel": "excellent",
-      "matchedReasons": ["预算匹配", "区域符合", "允许宠物"],
+      "matchedReasons": [{
+        "code": "budget",
+        "label": "预算匹配",
+        "scoreContribution": 30,
+        "detail": "月租 ¥2500 在预算 ¥3000 以内"
+      }],
       "unmatchedReasons": [],
-      "needsConfirmation": ["地铁距离需确认"]
-    }]
+      "needsConfirmation": [],
+      "nextAction": "推荐立即发送房源给客户"
+    }],
+    "totalProperties": 50,
+    "matchedCount": 12
   },
   "error": null
 }
