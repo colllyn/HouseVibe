@@ -1034,7 +1034,7 @@ describe("PATCH /api/properties/[id]/media/[mediaId]", () => {
 
     // The handler queries property_media twice: once to verify existence, once to update.
     let queryCount = 0;
-    let updateCallCount = 0;
+    let _updateCallCount = 0;
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({
@@ -1057,7 +1057,7 @@ describe("PATCH /api/properties/[id]/media/[mediaId]", () => {
         chain.limit = vi.fn(() => chain);
         chain.order = vi.fn(() => chain);
         chain.update = vi.fn(() => {
-          updateCallCount++;
+          _updateCallCount++;
           return chain;
         });
         chain.single = vi.fn(() => {
@@ -1108,7 +1108,7 @@ describe("PATCH /api/properties/[id]/media/[mediaId]", () => {
     const updatedMedia = { ...mediaRow, is_cover: true };
 
     let queryCount = 0;
-    let updateCalls: string[] = [];
+    const updateCalls: string[] = [];
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({
