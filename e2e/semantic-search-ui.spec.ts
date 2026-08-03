@@ -1,9 +1,12 @@
 /**
  * Semantic Search UI Shell E2E — P2-MATCH-002
  *
- * Covers: entitlement gating, input validation, fallback matrix (all HTTP statuses),
- * chips (structured + search), URL sync, mobile layout, accessibility,
+ * Covers: entitlement gating, input validation, fallback matrix (all HTTP statuses
+ * including illegal 200), chips (structured + search + accessible names), URL sync,
+ * mobile layout, touch targets (44px on all interactive elements), accessibility,
  * XSS safety, no /api/ai/ implementation, no search persistence.
+ *
+ * Business scenarios: 26 | Setup: 3 shared | Playwright total: 29
  *
  * Network mocks are used ONLY for the Phase 3 parser endpoint
  * (POST /api/ai/parse-property-search) which does not exist in Phase 2.
@@ -157,7 +160,7 @@ test.describe("Semantic Search UI", () => {
   // --- Input Validation ---
 
   test("2. empty input disables submit button", async ({ page }) => {
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     await input.fill("");
     // Submit should be disabled
     const submitBtn = page.locator('button[aria-label="提交搜索"]');
@@ -165,20 +168,21 @@ test.describe("Semantic Search UI", () => {
   });
 
   test("3. whitespace-only input disables submit", async ({ page }) => {
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     await input.fill("     ");
     const submitBtn = page.locator('button[aria-label="提交搜索"]');
     await expect(submitBtn).toBeDisabled();
   });
 
-  test("4. overlength input shows validation error", async ({ page }) => {
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+  test("4. overlength input — capped at 500 chars by HTML maxLength", async ({ page }) => {
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     const longText = "天".repeat(501);
     await input.fill(longText);
-    // Should show error message
-    await expect(page.locator('text=搜索内容最多 500 字')).toBeVisible();
-    const submitBtn = page.locator('button[aria-label="提交搜索"]');
-    await expect(submitBtn).toBeDisabled();
+    // HTML maxLength={500} prevents entering more than 500 characters
+    const value = await input.inputValue();
+    expect(value.length).toBeLessThanOrEqual(500);
+    // Submit button should be enabled (input is now exactly 500 valid chars)
+    // but we won't actually submit — just verify the cap works
   });
 
   // --- Fallback: 404 ---
@@ -186,7 +190,7 @@ test.describe("Semantic Search UI", () => {
   test("5. parser 404 → fallback to text search with indicator", async ({ page }) => {
     await mockParser(page, 404, { error: { code: "RESOURCE_NOT_FOUND", message: "Not Found" } });
 
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     await input.fill("天河区一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
@@ -205,7 +209,7 @@ test.describe("Semantic Search UI", () => {
   test("6. parser 501 → fallback to text search", async ({ page }) => {
     await mockParser(page, 501, { error: { code: "NOT_IMPLEMENTED", message: "Not Implemented" } });
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("天河一房");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("天河一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     await expect(page.locator('text=智能搜索即将上线').first()).toBeVisible({ timeout: 8000 });
@@ -217,7 +221,7 @@ test.describe("Semantic Search UI", () => {
   test("7. parser 200 → structured chips, URL updated", async ({ page }) => {
     await mockParser(page, 200, VALID_200_BODY);
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("3500以内天河一房可养宠物");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("3500以内天河一房可养宠物");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     // Should show structured chips (inside the chips container)
@@ -236,7 +240,7 @@ test.describe("Semantic Search UI", () => {
   test("8. parser network error → fallback + toast", async ({ page }) => {
     await mockParserAbort(page);
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("天河一房");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("天河一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     // Should show error toast/indicator
@@ -249,53 +253,65 @@ test.describe("Semantic Search UI", () => {
   // --- 401: NO Fallback ---
 
   test("9. parser 401 → auth error, NO fallback", async ({ page }) => {
+    const urlBefore = page.url();
     await mockParser(page, 401, { error: { code: "UNAUTHENTICATED", message: "Not authenticated" } });
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("天河一房");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("天河一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     // Should show auth error
     await expect(page.locator('text=请先登录')).toBeVisible({ timeout: 8000 });
 
-    // URL should NOT contain search param (no fallback)
-    const url = page.url();
-    expect(url).not.toContain("search=");
+    // URL must be completely unchanged (no fallback, no param added)
+    await page.waitForTimeout(500);
+    const urlAfter = page.url();
+    const paramsAfter = new URL(urlAfter).searchParams;
+    expect(paramsAfter.get("search")).toBeNull();
+    expect(urlAfter).toBe(urlBefore);
   });
 
   // --- 403: NO Fallback ---
 
   test("10. parser 403 FEATURE_NOT_ALLOWED → permission error, NO fallback", async ({ page }) => {
+    const urlBefore = page.url();
     await mockParser(page, 403, {
       error: { code: "FEATURE_NOT_ALLOWED", message: "需要 semantic_search 权限" },
     });
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("天河一房");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("天河一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     // Should show permission error
     await expect(page.locator('text=semantic_search 权限')).toBeVisible({ timeout: 8000 });
 
-    // URL should NOT contain search param (no fallback)
-    const url = page.url();
-    expect(url).not.toContain("search=");
+    // URL must be completely unchanged (no fallback)
+    await page.waitForTimeout(500);
+    const urlAfter = page.url();
+    const paramsAfter = new URL(urlAfter).searchParams;
+    expect(paramsAfter.get("search")).toBeNull();
+    expect(urlAfter).toBe(urlBefore);
   });
 
   // --- 422: NO Fallback ---
 
   test("11. parser 422 → validation error, NO fallback", async ({ page }) => {
+    const urlBefore = page.url();
     await mockParser(page, 422, {
       error: { code: "VALIDATION_FAILED", message: "Input invalid" },
     });
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("天河一房");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("天河一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     // Should show validation error
     await expect(page.locator('text=输入校验失败')).toBeVisible({ timeout: 8000 });
 
-    // URL should NOT contain search param
-    const url = page.url();
-    expect(url).not.toContain("search=");
+    // URL must be completely unchanged (no fallback)
+    await page.waitForTimeout(500);
+    const urlAfter = page.url();
+    const paramsAfter = new URL(urlAfter).searchParams;
+    expect(paramsAfter.get("search")).toBeNull();
+    expect(urlAfter).toBe(urlBefore);
   });
 
   // --- 500 Fallback ---
@@ -303,7 +319,7 @@ test.describe("Semantic Search UI", () => {
   test("12. parser 500 → fallback with error toast", async ({ page }) => {
     await mockParser(page, 500, { error: { code: "INTERNAL_ERROR", message: "Server Error" } });
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("天河一房");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("天河一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     await expect(page.locator('text=智能解析暂不可用').first()).toBeVisible({ timeout: 8000 });
@@ -315,7 +331,7 @@ test.describe("Semantic Search UI", () => {
   test("13. multiple districts in AI response — all preserved in chips", async ({ page }) => {
     await mockParser(page, 200, MULTI_DISTRICT_200_BODY);
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("天河海珠越秀");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("天河海珠越秀");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     // At minimum the first district should appear as a chip
@@ -327,7 +343,7 @@ test.describe("Semantic Search UI", () => {
   test("14. remove single chip → URL param removed", async ({ page }) => {
     // First, get some chips visible via a 200 mock
     await mockParser(page, 200, VALID_200_BODY);
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("3500以内天河一房");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("3500以内天河一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     // Should have chips
@@ -347,15 +363,18 @@ test.describe("Semantic Search UI", () => {
 
   test("15. clear all chips → navigates to base /properties", async ({ page }) => {
     await mockParser(page, 200, VALID_200_BODY);
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("3500以内天河一房");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("3500以内天河一房");
     await page.locator('button[aria-label="提交搜索"]').click();
 
-    // Click clear all (use .first() to avoid strict mode: there are two clear buttons)
-    const clearBtn = page.locator('text=清除全部').first();
-    if (await clearBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await clearBtn.click();
-      await page.waitForURL(/\/properties$/, { timeout: 10000 });
-    }
+    // Wait for chips to appear
+    const chipSection = page.locator('[aria-label="当前筛选条件"]');
+    await expect(chipSection).toBeVisible({ timeout: 8000 });
+
+    // Click clear all (inside the chips area)
+    const clearBtn = chipSection.locator('text=清除全部');
+    await expect(clearBtn).toBeVisible({ timeout: 5000 });
+    await clearBtn.click();
+    await page.waitForURL(/\/properties$/, { timeout: 10000 });
   });
 
   // --- Back Navigation ---
@@ -379,17 +398,17 @@ test.describe("Semantic Search UI", () => {
   test("17. no results shows suggestions", async ({ page }) => {
     // Use a very specific search that won't match anything
     await mockParser(page, 404, { error: { code: "RESOURCE_NOT_FOUND" } });
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("不存在的房源xyzxyz");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("不存在的房源xyzxyz");
     await page.locator('button[aria-label="提交搜索"]').click();
 
-    // If results are empty, should see suggestions
+    // Wait for fallback to complete
     await page.waitForTimeout(3000);
-    const noResultText = page.locator('text=暂无符合条件的房源');
-    const emptyText = page.locator('text=暂无房源');
-    // Either no results or empty is fine — depends on existing data
-    const hasAny = (await noResultText.isVisible().catch(() => false)) ||
-                   (await emptyText.isVisible().catch(() => false));
-    expect(hasAny).toBe(true);
+    // Either "暂无符合条件的房源" or "暂无房源" must appear (both are valid empty states)
+    const noResultLocator = page.locator('text=暂无符合条件的房源');
+    const emptyLocator = page.locator('text=暂无房源');
+    const noResultVisible = await noResultLocator.isVisible();
+    const emptyVisible = await emptyLocator.isVisible();
+    expect(noResultVisible || emptyVisible).toBe(true);
   });
 
   // --- Mobile Layout ---
@@ -398,7 +417,7 @@ test.describe("Semantic Search UI", () => {
     await page.setViewportSize({ width: 375, height: 812 });
 
     // Search input should be visible
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     await expect(input).toBeVisible({ timeout: 5000 });
 
     // No horizontal scroll on the main content
@@ -411,17 +430,26 @@ test.describe("Semantic Search UI", () => {
   // --- Touch Targets 44px ---
 
   test("19. touch targets at least 44px", async ({ page }) => {
+    // Submit button
     const submitBtn = page.locator('button[aria-label="提交搜索"]');
-    const box = await submitBtn.boundingBox();
-    if (box) {
-      expect(box.height).toBeGreaterThanOrEqual(44);
-      expect(box.width).toBeGreaterThanOrEqual(44);
-    }
+    const submitBox = await submitBtn.boundingBox();
+    expect(submitBox).not.toBeNull();
+    expect(submitBox!.height).toBeGreaterThanOrEqual(44);
+    expect(submitBox!.width).toBeGreaterThanOrEqual(44);
 
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+    // Search input
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     const inputBox = await input.boundingBox();
-    if (inputBox) {
-      expect(inputBox.height).toBeGreaterThanOrEqual(44);
+    expect(inputBox).not.toBeNull();
+    expect(inputBox!.height).toBeGreaterThanOrEqual(44);
+
+    // Example prompts (each must be at least 44px)
+    const prompts = page.locator('button:has-text("3500以内")');
+    const promptCount = await prompts.count();
+    for (let i = 0; i < promptCount; i++) {
+      const promptBox = await prompts.nth(i).boundingBox();
+      expect(promptBox).not.toBeNull();
+      expect(promptBox!.height).toBeGreaterThanOrEqual(44);
     }
   });
 
@@ -438,7 +466,7 @@ test.describe("Semantic Search UI", () => {
       error: null,
     });
 
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("<b>bold</b>");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("<b>bold</b>");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     // Wait for response processing
@@ -468,7 +496,7 @@ test.describe("Semantic Search UI", () => {
 
   test("22. search query not persisted across page reload", async ({ page }) => {
     await mockParser(page, 404, { error: { code: "RESOURCE_NOT_FOUND" } });
-    await page.getByRole("textbox", { name: "搜索输入框" }).fill("test-query-12345");
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("test-query-12345");
     await page.locator('button[aria-label="提交搜索"]').click();
 
     await page.waitForTimeout(1500);
@@ -477,7 +505,7 @@ test.describe("Semantic Search UI", () => {
     await page.goto("/properties");
 
     // The input should be empty (query not persisted)
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     await expect(input).toHaveValue("", { timeout: 5000 });
 
     // No search chip from the previous query
@@ -490,10 +518,16 @@ test.describe("Semantic Search UI", () => {
   test("23. search container has role=search and proper aria-labels", async ({ page }) => {
     const searchRole = page.locator('[role="search"]');
     await expect(searchRole).toBeVisible({ timeout: 5000 });
-    await expect(searchRole).toHaveAttribute("aria-label", "自然语言搜索房源");
 
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+    // Input must have aria-label per contract §7.5
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     await expect(input).toBeVisible();
+
+    // Submit button must have accessible name
+    const submitBtn = page.locator('button[aria-label="提交搜索"]');
+    await expect(submitBtn).toBeVisible();
+    // Must have visible accessible name (contract §7.5)
+    await expect(submitBtn).toContainText("智能搜索");
   });
 
   // --- Example Prompts ---
@@ -505,8 +539,85 @@ test.describe("Semantic Search UI", () => {
 
     // Click a prompt should fill the input
     await promptBtn.first().click();
-    const input = page.getByRole("textbox", { name: "搜索输入框" });
+    const input = page.getByRole("textbox", { name: "自然语言搜索房源" });
     const value = await input.inputValue();
     expect(value.length).toBeGreaterThan(0);
+  });
+
+  // --- Illegal HTTP 200 Response ---
+
+  test("25. parser 200 with invalid response body → validation error, URL unchanged, NO fallback", async ({ page }) => {
+    const urlBefore = page.url();
+    // Mock parser returns 200 but with a body that fails SearchParseResponseSchema validation
+    // (data is null with no error — the envelope is technically valid JSON but the schema requires data.filters)
+    await mockParser(page, 200, { data: null, error: null });
+
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("天河一房3500");
+    await page.locator('button[aria-label="提交搜索"]').click();
+
+    // Should show validation error message
+    await expect(page.locator('text=智能解析响应无效')).toBeVisible({ timeout: 8000 });
+
+    // URL must be completely unchanged — no fallback, no search param added
+    await page.waitForTimeout(500);
+    const urlAfter = page.url();
+    const paramsAfter = new URL(urlAfter).searchParams;
+    expect(paramsAfter.get("search")).toBeNull();
+
+    // Verify no new query params were added at all (the URL before and after should be equivalent)
+    // Strip any trailing params that might have been there before
+    const beforeParams = new URL(urlBefore).searchParams;
+    for (const [key] of beforeParams.entries()) {
+      expect(paramsAfter.get(key)).toBe(beforeParams.get(key));
+    }
+    // And no extra params added
+    for (const [key] of paramsAfter.entries()) {
+      expect(beforeParams.get(key)).toBe(paramsAfter.get(key));
+    }
+
+    // No search chip should appear (search input area should not show chips)
+    const chipArea = page.locator('[aria-label="当前筛选条件"]');
+    await expect(chipArea).toHaveCount(0);
+  });
+
+  // --- Chip Touch Targets + Accessible Names ---
+
+  test("26. chip touch targets at least 44px and remove buttons have accessible names", async ({ page }) => {
+    // Get chips visible via a 200 mock
+    await mockParser(page, 200, VALID_200_BODY);
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("3500以内天河一房");
+    await page.locator('button[aria-label="提交搜索"]').click();
+
+    // Wait for chips
+    const chipSection = page.locator('[aria-label="当前筛选条件"]');
+    await expect(chipSection).toBeVisible({ timeout: 8000 });
+
+    // Check each chip's remove button has an accessible name with the filter value
+    const removeButtons = page.locator('[aria-label^="删除筛选条件"]');
+    const removeCount = await removeButtons.count();
+    expect(removeCount).toBeGreaterThan(0);
+
+    for (let i = 0; i < removeCount; i++) {
+      const btn = removeButtons.nth(i);
+      // Each remove button must have an aria-label containing the filter value
+      const ariaLabel = await btn.getAttribute("aria-label");
+      expect(ariaLabel).toBeTruthy();
+      // Must include a colon separator between label and value
+      expect(ariaLabel!).toContain(": ");
+
+      // Touch target must be at least 44px × 44px
+      const box = await btn.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeGreaterThanOrEqual(44);
+      expect(box!.width).toBeGreaterThanOrEqual(44);
+    }
+
+    // Clear-all button must also have 44px touch target
+    const clearAllBtn = chipSection.locator('text=清除全部');
+    if (await clearAllBtn.isVisible()) {
+      const clearBox = await clearAllBtn.boundingBox();
+      expect(clearBox).not.toBeNull();
+      expect(clearBox!.height).toBeGreaterThanOrEqual(44);
+    }
   });
 });

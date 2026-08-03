@@ -61,7 +61,7 @@ export function SearchChips({
           <span
             key={isFallback ? `search-${chip.value}` : chip.key}
             className={cn(
-              "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium min-h-[36px]",
+              "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium min-h-[44px]",
               isFallback
                 ? "bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
                 : "bg-secondary text-secondary-foreground"
@@ -73,7 +73,7 @@ export function SearchChips({
               type="button"
               onClick={handleRemove}
               aria-label={`删除筛选条件: ${chip.label} ${chip.value}`}
-              className="ml-0.5 rounded-full p-0.5 hover:bg-background/50 transition-colors min-w-[20px] min-h-[20px] flex items-center justify-center"
+              className="ml-0.5 rounded-full p-0.5 hover:bg-background/50 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <X className="h-3 w-3" />
             </button>
@@ -86,7 +86,7 @@ export function SearchChips({
         <button
           type="button"
           onClick={onClearAll}
-          className="inline-flex items-center gap-1 rounded-full border border-input bg-background px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted min-h-[36px] transition-colors"
+          className="inline-flex items-center gap-1 rounded-full border border-input bg-background px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-muted min-h-[44px] transition-colors"
         >
           <X className="h-3 w-3" />
           清除全部 ({allChips.length})

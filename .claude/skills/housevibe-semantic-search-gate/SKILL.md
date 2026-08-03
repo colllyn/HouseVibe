@@ -214,9 +214,13 @@ Verify each status code behavior:
 ## UI Verification
 
 - Search container: `role="search"`
-- Input: `aria-label="自然语言搜索房源"`
-- Submit button: visible text label, `min-width: 44px`
-- Chips: each remove button has `aria-label="删除筛选条件: {label}"`
+- Input: `aria-label="自然语言搜索房源"` (on the `<input>` element, NOT only on container)
+- Submit button: visible text label on ALL viewports, `min-width: 44px`
+- Clear input button: `min-width: 44px`, `min-height: 44px`
+- Example prompts: each `min-height: 44px`
+- Chips: each chip container `min-height: 44px`
+- Chips: each remove button `min-width: 44px`, `min-height: 44px`, `aria-label="删除筛选条件: {label} {value}"`
+- Clear-all chips button: `min-height: 44px`
 - Loading state during parser request
 - Fallback indicator: "智能搜索即将上线 · 当前使用文本匹配"
 - Error states for auth, permission, validation errors
@@ -224,10 +228,14 @@ Verify each status code behavior:
 - Example prompts displayed and clickable
 - Enter submits, Escape clears input
 - 320px: no horizontal scroll
-- Mobile: 375px minimum, `min-height: 44px` touch targets
+- Mobile: 375px minimum
 - Chips: flex-wrap, no overflow
 - Focus returns to input after chip removal
-- `dvh` units for soft keyboard adaptation
+- `dvh` units for soft keyboard adaptation (`min-h-dvh` on page container)
+- All URL filter chips have human-readable labels (not raw param names)
+- Submit button accessible name includes "智能搜索" on all viewports
+- No hardcoded magic colors; design tokens or Tailwind theme colors only
+- `maxLength={500}` on input (not 501)
 
 ## Required Semantic Search Coverage
 
@@ -264,8 +272,11 @@ Confirm actual executable coverage for:
 - Illegal response does not pollute URL
 
 ### E2E
-- 27 scenarios in `e2e/semantic-search-ui.spec.ts`
+- 26 business scenarios in `e2e/semantic-search-ui.spec.ts` (plus 3 shared setup = 29 Playwright total)
+- Setup tests (3) and business tests (26) MUST be distinguished in gate output
 - No skipped tests in semantic search E2E
+- E2E covers: all 9 fallback matrix statuses including illegal HTTP 200, multi-district, chip removal, touch targets on all interactive elements, accessible names on all controls
+- Arithmetic total errors (confusing setup tests with business scenarios) MUST cause FAIL
 
 ### Unit Tests
 - 28 Zod schema unit tests in `src/features/properties/__tests__/semantic-search-schemas.test.ts`
@@ -296,10 +307,12 @@ Ask `quality-reviewer` to perform a final read-only review of:
 - Frontmatter is correct
 - `disable-model-invocation: true`
 - All contract sections are covered
-- Semantic Search E2E = 27/27 (no skips)
+- Semantic Search E2E: 26 business scenarios + 3 setup = 29 total (no skips)
 - Multi-district chips work correctly (no data loss)
 - E2E failures prevent PASS
 - No AI/STT boundary violations
+- Setup tests and business scenarios are correctly distinguished in gate output
+- Reviewer findings marked P2 that conflict with frozen contract items MUST NOT be accepted as PASS — they must be fixed or the gate FAILs
 
 PASS requires:
 - All database tests pass (0 failed)
@@ -308,11 +321,19 @@ PASS requires:
 - No skipped tests
 - No AI/STT code in property/search paths
 - No `/api/ai/` routes created
-- Fallback matrix verified per status code
+- Fallback matrix verified per status code (including illegal HTTP 200 → NO fallback, URL unchanged)
 - Entitlement gate verified
 - URL/Chips state management verified
 - Privacy and security scans clean
 - UI accessibility verified
+- All critical interactive elements have ≥44px touch targets (submit, clear input, chip remove, clear all, example prompts) — verified by E2E bounding box checks
+- Input `aria-label="自然语言搜索房源"` on the `<input>` element
+- Chip remove buttons have `aria-label` containing the filter label and value
+- All URL filter chips have human-readable labels
+- Submit button has visible accessible name on all viewports
+- `maxLength={500}` on search input (not 501)
+- `dvh` units used on the properties page container
+- `clearAllFilters` does not use full page reload
 - Property Gate PASS
 - Client Gate PASS
 - Matching Gate PASS

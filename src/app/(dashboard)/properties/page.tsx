@@ -29,6 +29,24 @@ interface ListData {
 const SL: Record<string, string> = { draft: "草稿", available: "在租", reserved: "已定", rented: "已租", offline: "下架", expired: "过期", deleted: "已删除" };
 const SC: Record<string, string> = { draft: "bg-gray-100 text-gray-700", available: "bg-green-100 text-green-700", reserved: "bg-yellow-100 text-yellow-700", rented: "bg-blue-100 text-blue-700", offline: "bg-gray-100 text-gray-500", expired: "bg-red-100 text-red-700", deleted: "bg-red-100 text-red-500" };
 
+// Human-readable labels for URL filter chips (contract §6.1: chips must have understandable labels)
+const URL_CHIP_LABELS: Record<string, string> = {
+  status: "状态", district: "区域", city: "城市", businessArea: "商圈",
+  communityName: "小区", rentalType: "租赁方式", bedrooms: "户型",
+  minRent: "最低租金", maxRent: "最高租金", minArea: "最小面积", maxArea: "最大面积",
+  petsAllowed: "可养宠物", cookingAllowed: "可做饭", hasElevator: "有电梯",
+  availableBefore: "入住前", availableAfter: "入住后", isShared: "共享",
+  subwayText: "地铁", search: "搜索",
+};
+function formatUrlChipValue(key: string, value: string): string {
+  if (key === "petsAllowed" || key === "cookingAllowed" || key === "hasElevator") return value === "true" ? "是" : "否";
+  if (key === "rentalType") return value === "whole_unit" ? "整租" : value === "shared" ? "合租" : value;
+  if (key === "isShared") return value === "true" ? "是" : "否";
+  if (key === "bedrooms") return `${value}室`;
+  if (key === "status") return SL[value] ?? value;
+  return value;
+}
+
 function Badge({ s }: { s: string }) {
   return <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", SC[s] ?? "bg-gray-100 text-gray-700")}>{SL[s] ?? s}</span>;
 }
@@ -195,12 +213,17 @@ function PropertiesContent() {
     const filters: { key: string; label: string; value: string }[] = [];
     for (const [k, v] of searchParams.entries()) {
       if (["page", "limit", "sortBy", "sortOrder"].includes(k)) continue;
-      filters.push({ key: k, label: k, value: v });
+      const label = URL_CHIP_LABELS[k] ?? k;
+      filters.push({ key: k, label, value: formatUrlChipValue(k, v) });
     }
     return filters;
   }, [searchParams]);
 
-  const clearAllFilters = () => { window.location.href = "/properties"; };
+  const clearAllFilters = () => {
+    window.history.pushState(null, "", "/properties");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    clearSearch();
+  };
 
   const sortValue = `${searchParams.get("sortBy") ?? "updated_at"}:${searchParams.get("sortOrder") ?? "desc"}`;
 
@@ -216,7 +239,7 @@ function PropertiesContent() {
   };
 
   return (
-    <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-6xl mx-auto">
+    <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-6xl mx-auto min-h-dvh">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>

@@ -103,7 +103,7 @@ export const SearchInput = React.forwardRef<SearchInputHandle, SearchInputProps>
     <div
       className={cn("w-full space-y-2", className)}
       role="search"
-      aria-label="自然语言搜索房源"
+      aria-label="语义搜索房源"
     >
       {/* Input row */}
       <form onSubmit={handleSubmit} className="flex gap-2">
@@ -118,8 +118,8 @@ export const SearchInput = React.forwardRef<SearchInputHandle, SearchInputProps>
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="自然语言描述您的需求，例如：3500以内、天河、能养猫的一房"
-            aria-label="搜索输入框"
-            maxLength={501}
+            aria-label="自然语言搜索房源"
+            maxLength={500}
             disabled={isLoading || phase === "error_forbidden"}
             className={cn(
               "w-full min-h-[44px] pl-9 pr-10 rounded-md border border-input bg-background",
@@ -135,7 +135,7 @@ export const SearchInput = React.forwardRef<SearchInputHandle, SearchInputProps>
               type="button"
               onClick={handleClear}
               aria-label="清除搜索内容"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground hover:bg-muted min-w-[28px] min-h-[28px] flex items-center justify-center"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground hover:bg-muted min-w-[44px] min-h-[44px] flex items-center justify-center"
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -161,7 +161,7 @@ export const SearchInput = React.forwardRef<SearchInputHandle, SearchInputProps>
           )}
         >
           <Sparkles className="h-4 w-4" />
-          <span className="hidden sm:inline">智能搜索</span>
+          <span>智能搜索</span>
         </button>
       </form>
 
@@ -208,7 +208,7 @@ export const SearchInput = React.forwardRef<SearchInputHandle, SearchInputProps>
               key={prompt}
               type="button"
               onClick={() => handlePromptClick(prompt)}
-              className="inline-block rounded-full bg-secondary px-3 py-1.5 text-xs text-secondary-foreground hover:bg-secondary/80 min-h-[36px] transition-colors"
+              className="inline-block rounded-full bg-secondary px-3 py-1.5 text-xs text-secondary-foreground hover:bg-secondary/80 min-h-[44px] transition-colors"
             >
               {prompt}
             </button>
