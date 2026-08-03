@@ -277,7 +277,7 @@ function applyHardFilters(
       reasons.push({
         code: "rental_type",
         label: "租赁类型不匹配",
-        detail: `客户要求${rentalTypeLabel(client.rental_type!)}，房源为${rentalTypeLabel(property.rental_type)}`,
+        detail: `客户要求${rentalTypeLabel(client.rental_type ?? "")}，房源为${rentalTypeLabel(property.rental_type)}`,
       });
     }
   }

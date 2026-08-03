@@ -6,10 +6,21 @@
  * matching-contract.md v1.0 (FROZEN FOR P2-MATCH-001).
  */
 
-// @ts-nocheck — test fixtures use minimal records; runtime behavior is correct
 import { describe, it, expect } from "vitest";
 import { calculateMatches } from "@/features/matching/rule-engine";
 import type { ClientRecord, PropertyRecord } from "@/features/matching/rule-engine";
+
+/** Type-narrowing helper: throws if value is null/undefined, otherwise returns the value as non-nullable. */
+function mustExist<T>(value: T | null | undefined, label: string): NonNullable<T> {
+  if (value == null) throw new Error(`Expected ${label} to be defined`);
+  return value;
+}
+
+/** Type-safe array access: returns first element, throws if empty. */
+function first<T>(arr: T[], label: string): T {
+  if (arr.length === 0) throw new Error(`Expected ${label} to have at least one element`);
+  return arr[0] as T;
+}
 
 // =============================================================================
 // Fixtures
@@ -75,8 +86,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", monthly_rent: 3000 })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "budget")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "budget")).toBe(true);
   });
 
   it("budget_max: property rent within budget → passes filter", () => {
@@ -84,8 +95,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", monthly_rent: 3000 })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
-    expect(results[0].unmatchedReasons.every((r: { code: string }) => r.code !== "budget")).toBe(true);
+    expect(first(results, "results").score).toBeGreaterThan(0);
+    expect(first(results, "results").unmatchedReasons.every((r: { code: string }) => r.code !== "budget")).toBe(true);
   });
 
   it("pets_required=true + pets_allowed=false → excluded", () => {
@@ -93,8 +104,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", pets_allowed: false })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "pets_not_allowed")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "pets_not_allowed")).toBe(true);
   });
 
   it("pets_required=true + pets_allowed=true → passes", () => {
@@ -102,7 +113,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", pets_allowed: true })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("pets_required=null → no filter", () => {
@@ -110,7 +121,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", pets_allowed: false })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("rental_type exact match when client specifies", () => {
@@ -118,7 +129,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", rental_type: "whole_unit" })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("rental_type mismatch → excluded", () => {
@@ -126,8 +137,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", rental_type: "shared_room" })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "rental_type")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "rental_type")).toBe(true);
   });
 
   it("rental_type=null (client) → no filter", () => {
@@ -135,7 +146,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", rental_type: "shared_room" })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("available_from: property after client → excluded", () => {
@@ -143,8 +154,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", available_from: "2026-10-01" })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "availability")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "availability")).toBe(true);
   });
 
   it("available_from: property before client → passes", () => {
@@ -152,7 +163,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", available_from: "2026-08-15" })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("available_from=null (client) → no filter", () => {
@@ -160,7 +171,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", available_from: "2027-01-01" })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("bedrooms: property < client minimum → excluded", () => {
@@ -168,8 +179,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", bedrooms: 2 })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "bedrooms")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "bedrooms")).toBe(true);
   });
 
   it("bedrooms=null (client) → no filter", () => {
@@ -177,7 +188,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", bedrooms: 1 })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("cooking_required=true + cooking_allowed=false → excluded", () => {
@@ -185,8 +196,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", cooking_allowed: false })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "cooking_not_allowed")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "cooking_not_allowed")).toBe(true);
   });
 
   it("cooking_required=false + cooking_allowed=false → passes", () => {
@@ -194,7 +205,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", cooking_allowed: false })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("hard_requirements: elevator required + no elevator → excluded", () => {
@@ -204,8 +215,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", has_elevator: false })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code.startsWith("hard_requirement"))).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code.startsWith("hard_requirement"))).toBe(true);
   });
 
   it("hard_requirements: elevator required + has elevator → passes", () => {
@@ -215,7 +226,7 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", has_elevator: true, tags: ["has_elevator"] })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("deal_breakers: property tag matches deal_breaker → excluded", () => {
@@ -225,8 +236,8 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", tags: ["近地铁", "无电梯"] })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code.startsWith("deal_breaker"))).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code.startsWith("deal_breaker"))).toBe(true);
   });
 
   it("deal_breakers: no tag overlap → passes", () => {
@@ -236,23 +247,23 @@ describe("Hard Filters", () => {
     const properties = [makeProperty({ id: "prop-001", tags: ["近地铁", "精装修"] })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThan(0);
+    expect(first(results, "results").score).toBeGreaterThan(0);
   });
 
   it("status != 'available' → excluded", () => {
     const properties = [makeProperty({ id: "prop-001", status: "rented" })];
     const results = calculateMatches(defaultClient, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "property_unavailable")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "property_unavailable")).toBe(true);
   });
 
   it("deleted_at IS NOT NULL → excluded", () => {
     const properties = [makeProperty({ id: "prop-001", deleted_at: "2026-07-01T00:00:00Z" })];
     const results = calculateMatches(defaultClient, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "property_deleted")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "property_deleted")).toBe(true);
   });
 });
 
@@ -265,18 +276,18 @@ describe("Budget Dimension (weight: 30)", () => {
     const client = makeClient({ budget_max: 5000, preferred_districts: [], bedrooms: null, available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", monthly_rent: 3000, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const budgetReason = results[0].matchedReasons.find((r: { code: string }) => r.code === "budget");
+    const budgetReason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "budget");
     expect(budgetReason).toBeDefined();
-    expect(budgetReason!.scoreContribution).toBe(30);
+    expect(mustExist(budgetReason, "budgetReason").scoreContribution).toBe(30);
   });
 
   it("no budget_max → default 30", () => {
     const client = makeClient({ budget_max: null, preferred_districts: [], bedrooms: null, available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", monthly_rent: 3000, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const budgetReason = results[0].matchedReasons.find((r: { code: string }) => r.code === "budget");
+    const budgetReason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "budget");
     expect(budgetReason).toBeDefined();
-    expect(budgetReason!.scoreContribution).toBe(30);
+    expect(mustExist(budgetReason, "budgetReason").scoreContribution).toBe(30);
   });
 
   it("rent unknown → 0, needsConfirmation", () => {
@@ -284,8 +295,8 @@ describe("Budget Dimension (weight: 30)", () => {
     const properties = [makeProperty({ id: "prop-001", monthly_rent: null, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
     // When rent is null and budget_max is set, hard filter excludes (rent === null triggers must-pass failure)
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "budget")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "budget")).toBe(true);
   });
 });
 
@@ -294,18 +305,18 @@ describe("District Dimension (weight: 20)", () => {
     const client = makeClient({ preferred_districts: ["天河区"], bedrooms: null, available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", district: "天河区", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "district");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "district");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(20);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(20);
   });
 
   it("no preferred_districts → default 20", () => {
     const client = makeClient({ preferred_districts: [], bedrooms: null, available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", district: "天河区", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "district");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "district");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(20);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(20);
   });
 
   it("property district null → 0, needsConfirmation", () => {
@@ -313,9 +324,9 @@ describe("District Dimension (weight: 20)", () => {
     const properties = [makeProperty({ id: "prop-001", district: null, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
     // When property district is null, no district reason is emitted
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "district");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "district");
     expect(reason).toBeUndefined();
-    expect(results[0].needsConfirmation.some((c: { code: string }) => c.code === "district_unknown")).toBe(true);
+    expect(first(results, "results").needsConfirmation.some((c: { code: string }) => c.code === "district_unknown")).toBe(true);
   });
 
   it("same city, different district → 0 (not in preferred list)", () => {
@@ -323,7 +334,7 @@ describe("District Dimension (weight: 20)", () => {
     const properties = [makeProperty({ id: "prop-001", district: "越秀区", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
     // Different district, not in preferred list → no district reason
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "district");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "district");
     expect(reason).toBeUndefined();
   });
 });
@@ -333,18 +344,18 @@ describe("RoomType / Bedrooms Dimension (weight: 15)", () => {
     const client = makeClient({ bedrooms: 2, preferred_districts: [], available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", bedrooms: 2, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "roomType");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "roomType");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(15);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(15);
   });
 
   it("diff of 1 → 8", () => {
     const client = makeClient({ bedrooms: 2, preferred_districts: [], available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", bedrooms: 3, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "roomType");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "roomType");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(8);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(8);
   });
 
   it("diff >= 2 → 0", () => {
@@ -352,7 +363,7 @@ describe("RoomType / Bedrooms Dimension (weight: 15)", () => {
     const properties = [makeProperty({ id: "prop-001", bedrooms: 4, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
     // diff >= 2 → no roomType reason emitted (score 0)
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "roomType");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "roomType");
     expect(reason).toBeUndefined();
   });
 
@@ -360,9 +371,9 @@ describe("RoomType / Bedrooms Dimension (weight: 15)", () => {
     const client = makeClient({ bedrooms: null, preferred_districts: [], available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", bedrooms: 5, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "roomType");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "roomType");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(15);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(15);
   });
 
   it("property bedrooms null + client requirement → 0, needsConfirmation", () => {
@@ -370,8 +381,8 @@ describe("RoomType / Bedrooms Dimension (weight: 15)", () => {
     const properties = [makeProperty({ id: "prop-001", bedrooms: null, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
     // Property bedrooms null with client requirement → hard filter excludes (null < 2)
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "bedrooms")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "bedrooms")).toBe(true);
   });
 });
 
@@ -380,9 +391,9 @@ describe("Availability Dimension (weight: 15)", () => {
     const client = makeClient({ available_from: "2026-09-01", preferred_districts: [], bedrooms: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", available_from: "2026-08-15", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "availability");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "availability");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(15);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(15);
   });
 
   it("late by 10 days → hard filter excludes (score 0, unmatchedReason)", () => {
@@ -390,8 +401,8 @@ describe("Availability Dimension (weight: 15)", () => {
     const client = makeClient({ available_from: "2026-09-01", preferred_districts: [], bedrooms: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", available_from: "2026-09-11", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "availability")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "availability")).toBe(true);
   });
 
   it("late by 20 days → hard filter excludes (score 0, unmatchedReason)", () => {
@@ -399,17 +410,17 @@ describe("Availability Dimension (weight: 15)", () => {
     const client = makeClient({ available_from: "2026-09-01", preferred_districts: [], bedrooms: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", available_from: "2026-09-21", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "availability")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "availability")).toBe(true);
   });
 
   it("no client available_from → default 15", () => {
     const client = makeClient({ available_from: null, preferred_districts: [], bedrooms: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", available_from: "2027-06-01", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "availability");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "availability");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(15);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(15);
   });
 
   it("property available_from null + client has date → 0, needsConfirmation", () => {
@@ -417,8 +428,8 @@ describe("Availability Dimension (weight: 15)", () => {
     const properties = [makeProperty({ id: "prop-001", available_from: null, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
     // Property available_from null with client date → hard filter excludes (null date is NaN)
-    expect(results[0].score).toBe(0);
-    expect(results[0].unmatchedReasons.some((r: { code: string }) => r.code === "availability")).toBe(true);
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").unmatchedReasons.some((r: { code: string }) => r.code === "availability")).toBe(true);
   });
 });
 
@@ -427,35 +438,35 @@ describe("Commute Dimension (weight: 10)", () => {
     const client = makeClient({ commute_destination: "珠江新城", preferred_districts: [], bedrooms: null, available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", subway_text: "距3号线珠江新城站步行5分钟", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "commute");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "commute");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(10);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(10);
   });
 
   it("partial match → 6-8", () => {
     const client = makeClient({ commute_destination: "体育中心", preferred_districts: [], bedrooms: null, available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", subway_text: "距3号线体育西路站步行8分钟", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "commute");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "commute");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBeGreaterThanOrEqual(6);
-    expect(reason!.scoreContribution).toBeLessThanOrEqual(8);
+    expect(mustExist(reason, "reason").scoreContribution).toBeGreaterThanOrEqual(6);
+    expect(mustExist(reason, "reason").scoreContribution).toBeLessThanOrEqual(8);
   });
 
   it("no match + subway_text null → needsConfirmation", () => {
     const client = makeClient({ commute_destination: "珠江新城", preferred_districts: [], bedrooms: null, available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", subway_text: null, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    expect(results[0].needsConfirmation.some((c: { code: string }) => c.code === "subway_distance_unknown")).toBe(true);
+    expect(first(results, "results").needsConfirmation.some((c: { code: string }) => c.code === "subway_distance_unknown")).toBe(true);
   });
 
   it("no client commute_destination → default 10", () => {
     const client = makeClient({ commute_destination: null, preferred_districts: [], bedrooms: null, available_from: null, pets_required: null, cooking_required: false });
     const properties = [makeProperty({ id: "prop-001", subway_text: "距3号线步行5分钟", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "commute");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "commute");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(10);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(10);
   });
 });
 
@@ -477,10 +488,10 @@ describe("SpecialRequirements Dimension (weight: 10)", () => {
       facilities: { orientation: true, decoration: true },
     })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "specialRequirements");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "specialRequirements");
     // 2 matches (orientation + decoration) * 2 = 4
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(4);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(4);
   });
 
   it("capped at 10 even with many matches", () => {
@@ -502,9 +513,9 @@ describe("SpecialRequirements Dimension (weight: 10)", () => {
       facilities: manyFacilities,
     })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "specialRequirements");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "specialRequirements");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBeLessThanOrEqual(10);
+    expect(mustExist(reason, "reason").scoreContribution).toBeLessThanOrEqual(10);
   });
 
   it("no soft_preferences → default 10", () => {
@@ -518,9 +529,9 @@ describe("SpecialRequirements Dimension (weight: 10)", () => {
     });
     const properties = [makeProperty({ id: "prop-001", pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
-    const reason = results[0].matchedReasons.find((r: { code: string }) => r.code === "specialRequirements");
+    const reason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "specialRequirements");
     expect(reason).toBeDefined();
-    expect(reason!.scoreContribution).toBe(10);
+    expect(mustExist(reason, "reason").scoreContribution).toBe(10);
   });
 });
 
@@ -550,8 +561,8 @@ describe("Match Levels", () => {
       subway_text: "距3号线珠江新城站步行5分钟",
     })];
     const results = calculateMatches(client, properties);
-    expect(results[0].score).toBeGreaterThanOrEqual(85);
-    expect(results[0].matchLevel).toBe("excellent");
+    expect(first(results, "results").score).toBeGreaterThanOrEqual(85);
+    expect(first(results, "results").matchLevel).toBe("excellent");
   });
 
   it("score 65-84 → good", () => {
@@ -576,9 +587,9 @@ describe("Match Levels", () => {
     })];
     const results = calculateMatches(client, properties);
     // budget(30) + district(0) + roomType(8) + availability(15) + commute(10) + special(10) ≈ 73
-    expect(results[0].score).toBeGreaterThanOrEqual(65);
-    expect(results[0].score).toBeLessThanOrEqual(84);
-    expect(results[0].matchLevel).toBe("good");
+    expect(first(results, "results").score).toBeGreaterThanOrEqual(65);
+    expect(first(results, "results").score).toBeLessThanOrEqual(84);
+    expect(first(results, "results").matchLevel).toBe("good");
   });
 
   it("score 40-64 → fair", () => {
@@ -603,8 +614,8 @@ describe("Match Levels", () => {
     const results = calculateMatches(client, properties);
     // budget(30) + district(0) + roomType(0) + availability(15) + commute(10) + special(10) ≈ 65
     // With rent at budget max, budget score may be reduced
-    expect(results[0].score).toBeGreaterThanOrEqual(40);
-    expect(results[0].matchLevel).toBe("fair");
+    expect(first(results, "results").score).toBeGreaterThanOrEqual(40);
+    expect(first(results, "results").matchLevel).toBe("fair");
   });
 
   it("score 0-39 → low", () => {
@@ -628,8 +639,8 @@ describe("Match Levels", () => {
       cooking_allowed: false,
     })];
     const results = calculateMatches(client, properties);
-    expect(results[0].score).toBe(0);
-    expect(results[0].matchLevel).toBe("low");
+    expect(first(results, "results").score).toBe(0);
+    expect(first(results, "results").matchLevel).toBe("low");
   });
 });
 
@@ -657,7 +668,7 @@ describe("Next Actions", () => {
       subway_text: "距3号线珠江新城站步行5分钟",
     })];
     const results = calculateMatches(client, properties);
-    expect(results[0].nextAction).toBe("推荐立即发送房源给客户");
+    expect(first(results, "results").nextAction).toBe("推荐立即发送房源给客户");
   });
 
   it("good → recommends sending with confirmation notes", () => {
@@ -679,7 +690,7 @@ describe("Next Actions", () => {
       pets_allowed: true,
     })];
     const results = calculateMatches(client, properties);
-    expect(results[0].nextAction).toBe("可发送房源，建议标注待确认信息");
+    expect(first(results, "results").nextAction).toBe("可发送房源，建议标注待确认信息");
   });
 
   it("fair → partial match, reference only", () => {
@@ -701,7 +712,7 @@ describe("Next Actions", () => {
       pets_allowed: true,
     })];
     const results = calculateMatches(client, properties);
-    expect(results[0].nextAction).toBe("部分条件不匹配，可参考但不优先推荐");
+    expect(first(results, "results").nextAction).toBe("部分条件不匹配，可参考但不优先推荐");
   });
 
   it("low → not recommended", () => {
@@ -725,7 +736,7 @@ describe("Next Actions", () => {
       cooking_allowed: false,
     })];
     const results = calculateMatches(client, properties);
-    expect(results[0].nextAction).toBe("不建议推荐，多数条件不匹配");
+    expect(first(results, "results").nextAction).toBe("不建议推荐，多数条件不匹配");
   });
 });
 
@@ -752,7 +763,7 @@ describe("Weight Overrides", () => {
     const weightOverrides = { budget: 50, district: 10, roomType: 10, availability: 10, commute: 10, specialRequirements: 10 };
     const results = calculateMatches(client, properties, weightOverrides);
     expect(results).toHaveLength(1);
-    const budgetReason = results[0].matchedReasons.find((r: { code: string }) => r.code === "budget");
+    const budgetReason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "budget");
     expect(budgetReason).toBeDefined();
   });
 
@@ -773,7 +784,7 @@ describe("Weight Overrides", () => {
     })];
     const weightOverrides = { budget: 0, district: 50, roomType: 20, availability: 15, commute: 10, specialRequirements: 5 };
     const results = calculateMatches(client, properties, weightOverrides);
-    const budgetReason = results[0].matchedReasons.find((r: { code: string }) => r.code === "budget");
+    const budgetReason = first(results, "results").matchedReasons.find((r: { code: string }) => r.code === "budget");
     expect(budgetReason).toBeDefined();
   });
 
@@ -829,7 +840,7 @@ describe("Stable Sort", () => {
       makeProperty({ id: "prop-b", monthly_rent: 3000, district: "天河区", pets_allowed: null, cooking_allowed: null }),
     ];
     const results = calculateMatches(client, properties);
-    expect(results[0].score).toBeGreaterThanOrEqual(results[1].score);
+    expect(first(results, "results").score).toBeGreaterThanOrEqual(first(results.slice(1), "results[1]").score);
   });
 
   it("same score → property updated_at DESC", () => {
@@ -845,8 +856,8 @@ describe("Stable Sort", () => {
       makeProperty({ id: "prop-b", monthly_rent: 3000, district: "天河区", updated_at: "2026-08-01T00:00:00Z", pets_allowed: null, cooking_allowed: null }),
     ];
     const results = calculateMatches(client, properties);
-    expect(results[0].score).toBe(results[1].score);
-    expect(results[0].propertyId).toBe("prop-b");
+    expect(first(results, "results").score).toBe(first(results.slice(1), "results[1]").score);
+    expect(first(results, "results").propertyId).toBe("prop-b");
   });
 
   it("same score + same updated_at → property ID (stable tie-breaker)", () => {
@@ -863,10 +874,10 @@ describe("Stable Sort", () => {
       makeProperty({ id: "prop-b", monthly_rent: 3000, district: "天河区", updated_at: sameUpdatedAt, pets_allowed: null, cooking_allowed: null }),
     ];
     const results = calculateMatches(client, properties);
-    expect(results[0].score).toBe(results[1].score);
-    expect(results[0].propertyId).toBeDefined();
-    expect(results[1].propertyId).toBeDefined();
-    expect(results[0].propertyId).not.toBe(results[1].propertyId);
+    expect(first(results, "results").score).toBe(first(results.slice(1), "results[1]").score);
+    expect(first(results, "results").propertyId).toBeDefined();
+    expect(first(results.slice(1), "results[1]").propertyId).toBeDefined();
+    expect(first(results, "results").propertyId).not.toBe(first(results.slice(1), "results[1]").propertyId);
   });
 });
 
@@ -908,8 +919,8 @@ describe("Edge Cases", () => {
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
     // All dimensions get default full marks: 30+20+15+15+10+10 = 100
-    expect(results[0].score).toBe(100);
-    expect(results[0].matchLevel).toBe("excellent");
+    expect(first(results, "results").score).toBe(100);
+    expect(first(results, "results").matchLevel).toBe("excellent");
   });
 
   it("multiple exact match dimensions → correct score sum", () => {
@@ -931,7 +942,7 @@ describe("Edge Cases", () => {
       subway_text: "距3号线珠江新城站步行5分钟",
     })];
     const results = calculateMatches(client, properties);
-    expect(results[0].score).toBe(100);
+    expect(first(results, "results").score).toBe(100);
   });
 
   it("hard filter + score combination", () => {
@@ -947,8 +958,8 @@ describe("Edge Cases", () => {
     ];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(2);
-    const failResult = results.find((r) => r.propertyId === "prop-fail")!;
-    const passResult = results.find((r) => r.propertyId === "prop-pass")!;
+    const failResult = mustExist(results.find((r) => r.propertyId === "prop-fail"), "failResult");
+    const passResult = mustExist(results.find((r) => r.propertyId === "prop-pass"), "passResult");
     expect(failResult.score).toBe(0);
     expect(failResult.unmatchedReasons.length).toBeGreaterThan(0);
     expect(passResult.score).toBeGreaterThan(0);
@@ -959,7 +970,7 @@ describe("Edge Cases", () => {
     const properties = [makeProperty({ id: "prop-001", monthly_rent: 3000, pets_allowed: null, cooking_allowed: null })];
     const results = calculateMatches(client, properties);
     expect(results).toHaveLength(1);
-    expect(results[0].score).toBeGreaterThanOrEqual(0);
+    expect(first(results, "results").score).toBeGreaterThanOrEqual(0);
   });
 
   it("multiple properties mixed (some pass, some fail filters)", () => {
@@ -979,6 +990,6 @@ describe("Edge Cases", () => {
     expect(results).toHaveLength(4);
     const scores = results.filter((r) => r.score > 0);
     expect(scores).toHaveLength(1);
-    expect(scores[0].propertyId).toBe("prop-good");
+    expect(first(scores, "scores").propertyId).toBe("prop-good");
   });
 });

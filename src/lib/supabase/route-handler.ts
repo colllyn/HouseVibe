@@ -5,7 +5,6 @@
  */
 
 import { createServerClient } from "@supabase/ssr";
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import { NextResponse, type NextRequest } from "next/server";
 import { getPublicEnv } from "@/config/env";
 
