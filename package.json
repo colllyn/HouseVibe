@@ -19,6 +19,7 @@
     "test:e2e:property-filters": "playwright test --project=setup --project=property-filters",
     "test:e2e:property-media": "playwright test --project=setup --project=property-media",
     "test:e2e:clients": "playwright test --project=setup --project=clients",
+    "test:e2e:client-interactions": "playwright test --project=setup --project=client-interactions",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",

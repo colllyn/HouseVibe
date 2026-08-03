@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, MapPin, Pencil, Loader2, Phone, MessageCircle } from "lucide-react";
 import { StageBadge, STAGE_LABELS } from "@/features/clients/components/stage-badge";
+import { InteractionTimeline } from "@/features/clients/components/interaction-timeline";
 import { cn } from "@/lib/utils";
 
 interface ClientData {
@@ -247,6 +248,9 @@ export default function ClientDetailPage() {
           </div>
         </section>
       ) : null}
+
+      {/* Interaction Timeline */}
+      <InteractionTimeline clientId={client.id} />
 
       {/* Meta */}
       <section className="rounded-lg border mb-6">

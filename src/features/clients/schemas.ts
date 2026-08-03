@@ -160,3 +160,51 @@ export const ClientQuerySchema = z.object({
 );
 
 export type ClientQuery = z.infer<typeof ClientQuerySchema>;
+
+// --- Interaction Schemas ---
+
+export const InteractionTypeEnum = z.enum([
+  "phone_call",
+  "wechat_message",
+  "in_person_meeting",
+  "property_viewing",
+  "follow_up",
+  "negotiation",
+  "contract_signing",
+  "complaint",
+  "other",
+]);
+
+export type InteractionType = z.infer<typeof InteractionTypeEnum>;
+
+export const CreateInteractionInputSchema = z.object({
+  interaction_type: InteractionTypeEnum,
+  summary: z.string().max(500).optional(),
+  raw_text: z.string().max(10000).optional(),
+  next_action: z.string().max(500).optional(),
+  occurred_at: z.string().min(1, "发生时间不能为空"),
+  property_id: z.string().uuid().optional().nullable(),
+});
+
+export const UpdateInteractionInputSchema = z.object({
+  interaction_type: InteractionTypeEnum.optional(),
+  summary: z.preprocess((v) => (v === "" ? null : v), z.string().max(500).optional().nullable()),
+  raw_text: z.preprocess((v) => (v === "" ? null : v), z.string().max(10000).optional().nullable()),
+  next_action: z.preprocess((v) => (v === "" ? null : v), z.string().max(500).optional().nullable()),
+  occurred_at: z.string().min(1).optional(),
+  property_id: z.preprocess((v) => (v === "" ? null : v), z.string().uuid().optional().nullable()),
+}).refine(
+  (d) => Object.keys(d).filter((k) => d[k as keyof typeof d] !== undefined).length > 0,
+  { message: "至少需要一个更新字段" }
+);
+
+export const InteractionQuerySchema = z.object({
+  type: InteractionTypeEnum.optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+  sortOrder: z.enum(["asc", "desc"]).default("desc"),
+});
+
+export type CreateInteractionInput = z.infer<typeof CreateInteractionInputSchema>;
+export type UpdateInteractionInput = z.infer<typeof UpdateInteractionInputSchema>;
+export type InteractionQuery = z.infer<typeof InteractionQuerySchema>;
