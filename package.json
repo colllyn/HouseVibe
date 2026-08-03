@@ -21,6 +21,7 @@
     "test:e2e:clients": "playwright test --project=setup --project=clients",
     "test:e2e:client-interactions": "playwright test --project=setup --project=client-interactions",
     "test:e2e:matching": "playwright test --project=setup --project=matching",
+    "test:e2e:semantic-search-ui": "playwright test --project=setup --project=semantic-search-ui",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",

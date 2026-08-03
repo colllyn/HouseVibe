@@ -117,10 +117,21 @@ export default defineConfig({
       },
       dependencies: ["setup"],
     },
+    // Semantic Search UI E2E
+    {
+      name: "semantic-search-ui",
+      testMatch: /semantic-search-ui\.spec\.ts/,
+      fullyParallel: false,
+      use: {
+        browserName: "chromium",
+        storageState: "e2e/.auth/owner.json",
+      },
+      dependencies: ["setup"],
+    },
     // Default chromium (auth, admin, settings E2E — no storageState needed)
     {
       name: "chromium",
-      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows)).*\.spec\.ts$/,
+      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows|semantic-search-ui)).*\.spec\.ts$/,
       use: { browserName: "chromium" },
     },
   ],

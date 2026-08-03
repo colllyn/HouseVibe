@@ -5,6 +5,11 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Building2, MapPin, ArrowUpRight, Plus, SlidersHorizontal, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SearchInput } from "@/features/properties/components/search-input";
+import type { SearchInputHandle } from "@/features/properties/components/search-input";
+import { SearchChips } from "@/features/properties/components/search-chips";
+import { useSemanticSearch } from "@/features/properties/hooks/use-semantic-search";
+import { useFeatureEntitlement } from "@/features/properties/hooks/use-feature-entitlement";
 
 // Types
 interface PropertyCard {
@@ -87,17 +92,6 @@ function Empty() {
   );
 }
 
-function NoResults() {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
-      <div className="rounded-full bg-muted p-4 mb-4"><SlidersHorizontal className="h-8 w-8 text-muted-foreground" /></div>
-      <h2 className="text-lg font-semibold mb-1">暂无符合条件的房源</h2>
-      <p className="text-sm text-muted-foreground mb-6 max-w-xs">试试放宽筛选条件或清除全部筛选</p>
-      <Link href="/properties" className="inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium border border-input bg-background hover:bg-muted min-h-[44px] transition-colors"><X className="h-4 w-4" />清除筛选</Link>
-    </div>
-  );
-}
-
 function ErrorState({ m, onRetry }: { m: string; onRetry: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
@@ -133,6 +127,37 @@ function PropertiesContent() {
   const [data, setData] = React.useState<ListData | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const searchInputRef = React.useRef<SearchInputHandle>(null);
+
+  // Entitlement gate for semantic search
+  const { entitled: semanticSearchEntitled, loading: entitlementLoading } =
+    useFeatureEntitlement("semantic_search");
+
+  // URL update callback for semantic search hook
+  const onUrlUpdate = React.useCallback(
+    (params: URLSearchParams) => {
+      // Merge with existing params (preserve any non-search filters)
+      const merged = new URLSearchParams(searchParams.toString());
+      // Remove old search-related params
+      merged.delete("search");
+      // Apply new params from semantic search
+      for (const [k, v] of params.entries()) {
+        if (v) merged.set(k, v);
+        else merged.delete(k);
+      }
+      window.history.pushState(null, "", `/properties?${merged.toString()}`);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    },
+    [searchParams]
+  );
+
+  // Semantic search hook
+  const {
+    state: searchState,
+    submit: submitSearch,
+    clear: clearSearch,
+    removeChip,
+  } = useSemanticSearch(onUrlUpdate);
 
   const fetchProperties = React.useCallback(async () => {
     setLoading(true);
@@ -204,6 +229,20 @@ function PropertiesContent() {
         </Link>
       </div>
 
+      {/* Semantic search input (gated on entitlement) */}
+      {!entitlementLoading && (
+        <SearchInput
+          ref={searchInputRef}
+          phase={searchState.phase}
+          message={searchState.message}
+          parserAvailable={searchState.parserAvailable}
+          onSubmit={submitSearch}
+          onClear={clearSearch}
+          entitled={semanticSearchEntitled}
+          className="mb-4"
+        />
+      )}
+
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         {/* Quick filters */}
@@ -235,20 +274,42 @@ function PropertiesContent() {
         )}
       </div>
 
-      {/* Active filter chips */}
-      {activeFilters.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {activeFilters.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => updateFilter(f.key, "")}
-              className="inline-flex items-center gap-1 rounded-full bg-secondary px-3 py-1.5 text-xs font-medium min-h-[36px] hover:bg-secondary/80 transition-colors"
-            >
-              {f.key}={f.value} <X className="h-3 w-3" />
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Combined chips: URL filters + semantic search chips */}
+      <SearchChips
+        urlChips={activeFilters.map((f) => ({ key: f.key, label: f.label, value: f.value }))}
+        aiChips={searchState.chips}
+        fallbackChips={
+          searchState.phase === "fallback_text" || searchState.phase === "fallback_error"
+            ? searchState.chips
+            : []
+        }
+        onRemoveUrlChip={(key) => {
+          // Multi-district: key is "district-天河区", remove only that value
+          if (key.startsWith("district-")) {
+            const districtToRemove = key.slice("district-".length);
+            const params = new URLSearchParams(searchParams.toString());
+            const allDistricts = params.getAll("district");
+            params.delete("district");
+            for (const d of allDistricts) {
+              if (d !== districtToRemove) params.append("district", d);
+            }
+            params.set("page", "1");
+            window.history.pushState(null, "", `/properties?${params.toString()}`);
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          } else {
+            updateFilter(key, "");
+          }
+          removeChip(key);
+          searchInputRef.current?.focus();
+        }}
+        onRemoveFallbackChip={(_key) => {
+          updateFilter("search", "");
+          clearSearch();
+          searchInputRef.current?.focus();
+        }}
+        onClearAll={clearAllFilters}
+        className="mb-4"
+      />
 
       {/* Content */}
       {loading ? (
@@ -256,7 +317,18 @@ function PropertiesContent() {
       ) : error ? (
         <ErrorState m={error} onRetry={fetchProperties} />
       ) : !data || data.properties.length === 0 ? (
-        activeFilters.length > 0 ? <NoResults /> : <Empty />
+        (activeFilters.length > 0 || searchState.chips.length > 0) ? (
+          <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
+            <div className="rounded-full bg-muted p-4 mb-4"><SlidersHorizontal className="h-8 w-8 text-muted-foreground" /></div>
+            <h2 className="text-lg font-semibold mb-1">暂无符合条件的房源</h2>
+            <p className="text-sm text-muted-foreground mb-6 max-w-xs">
+              {searchState.phase === "structured"
+                ? "未找到匹配房源 · 尝试删除筛选条件或修改搜索词"
+                : "试试放宽筛选条件或清除全部筛选"}
+            </p>
+            <Link href="/properties" className="inline-flex items-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium border border-input bg-background hover:bg-muted min-h-[44px] transition-colors"><X className="h-4 w-4" />清除筛选</Link>
+          </div>
+        ) : <Empty />
       ) : (
         <>
           <div className="text-xs text-muted-foreground mb-3">共 {data.total} 套房源</div>

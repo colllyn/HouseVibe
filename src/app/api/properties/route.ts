@@ -77,7 +77,13 @@ export async function GET(request: NextRequest) {
 
     // 5. Conditional filters
     if (q.status)           query = query.eq("status", q.status);
-    if (q.district)         query = query.ilike("district", `%${q.district}%`);
+    if (q.district) {
+      if (Array.isArray(q.district)) {
+        query = query.in("district", q.district);
+      } else {
+        query = query.ilike("district", `%${q.district}%`);
+      }
+    }
     if (q.city)             query = query.ilike("city", `%${q.city}%`);
     if (q.businessArea)     query = query.ilike("business_area", `%${q.businessArea}%`);
     if (q.communityName)    query = query.ilike("community_name", `%${q.communityName}%`);

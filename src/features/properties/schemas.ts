@@ -181,7 +181,10 @@ export type PropertySortBy = z.infer<typeof PropertySortByEnum>;
 export const PropertyQuerySchema = z.object({
   // Filters
   status: PropertyStatusEnum.optional(),
-  district: z.string().optional(),
+  district: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .describe("Single or multiple districts via repeated URL params"),
   city: z.string().optional(),
   businessArea: z.string().optional(),
   communityName: z.string().optional(),
@@ -278,3 +281,77 @@ export const UpdateClientInputSchema = z.object({
   stage: ClientStageEnum.optional(),
   next_follow_up_at: z.string().optional(),
 });
+
+// --- Semantic Search Schemas (P2-MATCH-002) ---
+
+/**
+ * Input schema for the semantic search NL query.
+ * Frozen per docs/contracts/property-semantic-search-ui-contract.md §5.
+ */
+export const SearchParseInputSchema = z.object({
+  query: z
+    .string()
+    .trim()
+    .min(1, "请输入搜索内容")
+    .max(500, "搜索内容最多 500 字")
+    .refine(
+      (v) => !/^[\s\p{P}\p{S}]+$/u.test(v),
+      "搜索内容不能仅为标点或特殊字符"
+    ),
+  requestId: z.string().uuid(),
+});
+export type SearchParseInput = z.infer<typeof SearchParseInputSchema>;
+
+/**
+ * Structured filters returned by the Phase 3 AI parser.
+ * Fields map to PropertyQuerySchema fields (contract §6.5).
+ */
+export const SearchParseFiltersSchema = z.object({
+  districts: z.array(z.string()).optional(),
+  communities: z.array(z.string()).optional(),
+  communityName: z.string().optional(),
+  monthlyRentMin: z.number().int().positive().optional(),
+  monthlyRentMax: z.number().int().positive().optional(),
+  bedrooms: z.number().int().min(0).max(20).optional(),
+  livingRooms: z.number().int().min(0).max(10).optional(),
+  rentalType: z.enum(["whole_unit", "shared"]).optional(),
+  petsAllowed: z.boolean().optional(),
+  cookingAllowed: z.boolean().optional(),
+  hasElevator: z.boolean().optional(),
+  availableBefore: z.string().optional(),
+  features: z.array(z.string()).optional(),
+  subwayText: z.string().optional(),
+  sortBy: PropertySortByEnum.optional(),
+  sortOrder: z.enum(["asc", "desc"]).optional(),
+});
+export type SearchParseFilters = z.infer<typeof SearchParseFiltersSchema>;
+
+/**
+ * Standard API response envelope for POST /api/ai/parse-property-search.
+ */
+export const SearchParseResponseSchema = z.object({
+  data: z.object({
+    filters: SearchParseFiltersSchema,
+    parsedQuery: z.string(),
+    unrecognizedTerms: z.array(z.string()),
+    requestId: z.string().uuid(),
+  }).nullable(),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+    details: z.record(z.unknown()).optional(),
+  }).nullable(),
+});
+export type SearchParseResponse = z.infer<typeof SearchParseResponseSchema>;
+
+/** State machine phases for the semantic search UI. */
+export type SemanticSearchPhase =
+  | "idle"
+  | "validating"
+  | "requesting"
+  | "structured"
+  | "fallback_text"
+  | "fallback_error"
+  | "error_auth"
+  | "error_forbidden"
+  | "error_validation";
