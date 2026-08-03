@@ -39,8 +39,8 @@ export default function NewClientPage() {
         body: JSON.stringify(data),
       });
       const result = await resp.json();
-      if (!resp.ok) { setError(result.error ?? "创建失败"); setLoading(false); return; }
-      window.location.href = `/clients/${result.id}`;
+      if (!resp.ok) { setError(result.error?.message ?? "创建失败"); setLoading(false); return; }
+      window.location.href = `/clients/${result.data?.id ?? result.id}`;
     } catch { setError("创建失败，请检查网络后重试"); setLoading(false); }
   };
 

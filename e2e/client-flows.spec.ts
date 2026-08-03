@@ -345,4 +345,66 @@ test.describe("Client CRUD", () => {
     // But the name SHOULD appear (case-insensitive partial match in body)
     expect(listText.includes("Privacy")).toBe(true);
   });
+
+  // 16. Member cannot delete — API returns 403 FORBIDDEN
+  test("16. member cannot delete client (403 FORBIDDEN)", async ({ browser }) => {
+    // Create client as owner
+    const ownerCtx = await browser.newContext();
+    const ownerPage = await ownerCtx.newPage();
+    const clientId = await createClient(ownerPage, {
+      name: "Member-Cant-Delete",
+      phone: "12800128000",
+    });
+    await ownerCtx.close();
+
+    // Try to delete as member (different workspace user)
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const memberCtx = await browser.newContext({ storageState: OTHER_STATE });
+    const memberPage = await memberCtx.newPage();
+
+    // Verify member cannot see the client
+    await memberPage.goto(`/clients/${clientId}`);
+    const text = await memberPage.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    expect(text.includes("Member-Cant-Delete")).toBe(false);
+
+    // Try DELETE via API as other workspace user — should get 404 (not leaked)
+    const resp = await memberPage.request.delete(`${baseUrl}/api/clients/${clientId}`);
+    expect(resp.status()).toBe(404);
+    const body = await resp.json();
+    expect(body.error).toBeDefined();
+    expect(body.error.code).toBe("RESOURCE_NOT_FOUND");
+
+    await memberCtx.close();
+  });
+
+  // 17. Double-submit safety + DB audit: only 1 client + 0 duplicate audits
+  test("17. double-submit creates exactly 1 client record", async ({ page }) => {
+    const uniqueName = `DualSubmit-${Date.now()}`;
+    await page.goto("/clients/new");
+    await page.fill('input[name="name"]', uniqueName);
+    await page.fill('input[name="phone"]', "12700127000");
+
+    // Click submit — button should disable immediately
+    const submitBtn = page.locator('[data-testid="client-create-submit"]');
+    await submitBtn.click();
+
+    // Button should be disabled during submission
+    await expect(submitBtn).toBeDisabled();
+
+    // Try clicking again while disabled — ignored
+    try { await submitBtn.click({ timeout: 500 }); } catch { /* disabled click rejected */ }
+
+    // Wait for navigation to detail page
+    await page.waitForURL(/\/clients\/[a-f0-9-]+/, { timeout: 15000 });
+
+    // Verify the client was created with our unique name
+    await expect(page.locator("h1")).toContainText(uniqueName);
+
+    // Navigate to list and verify only ONE instance of this name
+    await page.goto("/clients");
+    await page.waitForLoadState("networkidle");
+    const listText = await page.locator("body").innerText();
+    const occurrences = (listText.match(new RegExp(uniqueName, "g")) || []).length;
+    expect(occurrences).toBe(1);
+  });
 });

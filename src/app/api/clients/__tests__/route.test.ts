@@ -2,15 +2,16 @@
  * Route Handler Unit Tests -- /api/clients and /api/clients/[id]
  *
  * Covers GET list, POST create, GET detail, PATCH update, DELETE with all
- * required scenarios:
+ * required scenarios per client-contract v1.0:
  * - GET list: 401, 403, 200 with data, 200 empty, phone/wechat exclusion,
  *   stage filter, search filter, error sanitization
- * - POST create: 401, 403, 400 missing name, 201 success, workspace_id from
- *   server, created_by from auth
+ * - POST create: 401, 403, 400 missing name, 201 success with contract format,
+ *   workspace_id from server, created_by from auth, idempotency, duplicate safe
  * - GET detail: 401, 403, 404, 200 includes phone/wechat
  * - PATCH update: 401, 403, 404, 200 partial update, stage change, 422
  *   invalid stage
- * - DELETE: 401, 403 member blocked, 404, 200 soft-delete
+ * - DELETE: 401, 403 no workspace, 403 member forbidden, 403 admin forbidden,
+ *   200 owner soft-delete, 404, 422 closed_won, cross-workspace 404
  * - Error sanitization (no raw DB errors)
  * - Cross-workspace access denied
  */
@@ -257,7 +258,6 @@ describe("GET /api/clients", () => {
             Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
         });
       }
-      // Spying on the select call to verify phone/wechat are excluded
       const chain = makeChain({
         single: () =>
           Promise.resolve({ data: [{ id: "c1", name: "Safe" }], count: 1, error: null }),
@@ -276,12 +276,13 @@ describe("GET /api/clients", () => {
     );
 
     expect(res.status).toBe(200);
-    // Phone and wechat should NOT be in the select columns for list
-    // (the test verifies the API responds correctly; actual column
-    // exclusion is validated by the captured columns string)
     if (capturedSelect !== null) {
       expect(capturedSelect).not.toContain("phone");
       expect(capturedSelect).not.toContain("wechat");
+      expect(capturedSelect).not.toContain("hard_requirements");
+      expect(capturedSelect).not.toContain("soft_preferences");
+      expect(capturedSelect).not.toContain("deal_breakers");
+      expect(capturedSelect).not.toContain("raw_input_text");
     }
   });
 
@@ -446,7 +447,15 @@ describe("POST /api/clients", () => {
     expect(body.error.code).toBe("VALIDATION_FAILED");
   });
 
-  it("returns 201 on successful creation", async () => {
+  it("returns 201 with contract-compliant response format", async () => {
+    const expectedClient = {
+      id: "new-client-id",
+      name: "New Client",
+      stage: "new",
+      created_at: "2026-08-02T10:00:00Z",
+      workspace_id: "ws-1",
+      created_by: "u1",
+    };
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
@@ -455,10 +464,9 @@ describe("POST /api/clients", () => {
             Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
         });
       }
-      return makeChain({
-        terminal: { data: { id: "new-client-id" }, error: null },
-      });
+      return makeChain();
     });
+    mockRpc.mockResolvedValue({ data: expectedClient, error: null });
 
     const mod = await import("../route");
     const res = await mod.POST(
@@ -470,11 +478,15 @@ describe("POST /api/clients", () => {
 
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.id).toBeDefined();
+    expect(body.data).toBeDefined();
+    expect(body.data.id).toBe("new-client-id");
+    expect(body.data.name).toBe("New Client");
+    expect(body.data.stage).toBe("new");
+    expect(body.error).toBeNull();
   });
 
-  it("assigns workspace_id from server, not client", async () => {
-    let capturedPayload: Record<string, unknown> | null = null;
+  it("workspace_id and created_by are server-assigned via RPC", async () => {
+    let rpcArgs: Record<string, unknown> | null = null;
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
@@ -483,33 +495,34 @@ describe("POST /api/clients", () => {
             Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
         });
       }
-      return makeChain({
-        onInsert: (data: unknown) => {
-          capturedPayload = data as Record<string, unknown>;
+      return makeChain();
+    });
+    mockRpc.mockImplementation(async (_fn: string, args: Record<string, unknown>) => {
+      rpcArgs = args;
+      return {
+        data: {
+          id: "c-rpc", name: args.p_name, stage: args.p_stage,
+          created_at: "now", workspace_id: "ws-1", created_by: "u1",
         },
-        terminal: { data: { id: "c-hijack" }, error: null },
-      });
+        error: null,
+      };
     });
 
     const mod = await import("../route");
     const res = await mod.POST(
       new NextRequest("http://localhost/api/clients", {
         method: "POST",
-        body: JSON.stringify({ name: "Hijack", workspace_id: "ws-evil", phone: "13800138000" }),
+        body: JSON.stringify({ name: "RPC Test", workspace_id: "ws-evil", phone: "13800138000" }),
       })
     );
 
     expect(res.status).toBe(201);
-    // Server should use its own workspace_id, not the client-supplied one
-    if (capturedPayload) {
-      // Either workspace_id is overridden or the request body's workspace_id is ignored
-      const wsId = (capturedPayload as Record<string, unknown>).workspace_id;
-      expect(wsId === "ws-1" || wsId === undefined).toBeTruthy();
-    }
+    // RPC derives workspace_id and created_by from auth, not request body
+    expect(mockRpc).toHaveBeenCalled();
+    expect(rpcArgs).not.toBeNull();
   });
 
-  it("assigns created_by from auth user", async () => {
-    let capturedPayload: Record<string, unknown> | null = null;
+  it("returns 500 on RPC error -- sanitized", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
@@ -518,42 +531,11 @@ describe("POST /api/clients", () => {
             Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
         });
       }
-      return makeChain({
-        onInsert: (data: unknown) => {
-          capturedPayload = data as Record<string, unknown>;
-        },
-        terminal: { data: { id: "c-auth" }, error: null },
-      });
+      return makeChain();
     });
-
-    const mod = await import("../route");
-    await mod.POST(
-      new NextRequest("http://localhost/api/clients", {
-        method: "POST",
-        body: JSON.stringify({ name: "Auth Test" }),
-      })
-    );
-
-    if (capturedPayload) {
-      expect((capturedPayload as Record<string, unknown>).created_by).toBe("u1");
-    }
-  });
-
-  it("returns 500 on insert error -- sanitized", async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
-    mockFrom = vi.fn((table: string) => {
-      if (table === "workspace_members") {
-        return makeChain({
-          single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
-        });
-      }
-      return makeChain({
-        terminal: {
-          data: null,
-          error: { code: "23505", message: "duplicate key violates unique constraint" },
-        },
-      });
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { code: "XX000", message: "database disk full at /var/data" },
     });
 
     const mod = await import("../route");
@@ -567,9 +549,73 @@ describe("POST /api/clients", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBeDefined();
-    expect(body.error).not.toContain("duplicate");
-    expect(body.error).not.toContain("constraint");
-    expect(body.error).not.toContain("unique");
+    expect(body.error).not.toContain("disk");
+  });
+
+  it("idempotency: duplicate request returns existing client via RPC", async () => {
+    const existingClient = {
+      id: "existing-id", name: "Idempotent Client", stage: "new",
+      created_at: "2026-08-02T10:00:00Z", workspace_id: "ws-1", created_by: "u1",
+    };
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    mockFrom = vi.fn((table: string) => {
+      if (table === "workspace_members") {
+        return makeChain({
+          single: () =>
+            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
+        });
+      }
+      return makeChain();
+    });
+    // RPC returns existing client (idempotent response)
+    mockRpc.mockResolvedValue({ data: existingClient, error: null });
+
+    const mod = await import("../route");
+    const res = await mod.POST(
+      new NextRequest("http://localhost/api/clients", {
+        method: "POST",
+        headers: { "X-Idempotency-Key": "idem-key-002" },
+        body: JSON.stringify({ name: "Idempotent Client" }),
+      })
+    );
+
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.data).toBeDefined();
+    expect(body.data.id).toBe("existing-id");
+    expect(body.error).toBeNull();
+  });
+
+  it("idempotency: different content with same key returns 409 CONFLICT", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    mockFrom = vi.fn((table: string) => {
+      if (table === "workspace_members") {
+        return makeChain({
+          single: () =>
+            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
+        });
+      }
+      return makeChain();
+    });
+    // RPC raises conflict — idempotency key reused with different content
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { code: "23505", message: "Idempotency key reused with different request content" },
+    });
+
+    const mod = await import("../route");
+    const res = await mod.POST(
+      new NextRequest("http://localhost/api/clients", {
+        method: "POST",
+        headers: { "X-Idempotency-Key": "idem-key-003" },
+        body: JSON.stringify({ name: "Different Name" }),
+      })
+    );
+
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBeDefined();
+    expect(body.error.code).toBe("CONFLICT");
   });
 });
 
@@ -675,8 +721,9 @@ describe("GET /api/clients/[id]", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.phone).toBe("13800138000");
-    expect(body.wechat).toBe("wxid_test");
+    expect(body.data.phone).toBe("13800138000");
+    expect(body.data.wechat).toBe("wxid_test");
+    expect(body.error).toBeNull();
   });
 
   it("cross-workspace access returns 404 (not leaked)", async () => {
@@ -688,7 +735,6 @@ describe("GET /api/clients/[id]", () => {
             Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
         });
       }
-      // Client belongs to ws-2, not ws-1
       return makeChain({
         single: () =>
           Promise.resolve({ data: null, error: { code: "PGRST116" } }),
@@ -813,15 +859,15 @@ describe("PATCH /api/clients/[id]", () => {
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.success).toBe(true);
+    expect(body.data.success).toBe(true);
+    expect(body.error).toBeNull();
     expect(capturedUpdate).not.toBeNull();
     const cu = capturedUpdate as unknown as Record<string, unknown>;
     expect(cu.name).toBe("Partial Update");
     expect(cu.budget_min).toBe(3000);
   });
 
-  it("updates stage to valid value", async () => {
-    let capturedUpdate: Record<string, unknown> | null = null;
+  it("routes stage change through set_client_stage RPC", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
@@ -830,14 +876,9 @@ describe("PATCH /api/clients/[id]", () => {
             Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
         });
       }
-      return makeChain({
-        single: () =>
-          Promise.resolve({ data: { id: "client-1" }, error: null }),
-        onUpdate: (data: unknown) => {
-          capturedUpdate = data as Record<string, unknown>;
-        },
-      });
+      return makeChain();
     });
+    mockRpc.mockResolvedValue({ data: { stage: "qualified" }, error: null });
 
     const mod = await import("../[id]/route");
     const res = await mod.PATCH(
@@ -849,11 +890,13 @@ describe("PATCH /api/clients/[id]", () => {
     );
 
     expect(res.status).toBe(200);
-    const cu = capturedUpdate as unknown as Record<string, unknown>;
-    expect(cu.stage).toBe("qualified");
+    expect(mockRpc).toHaveBeenCalledWith("set_client_stage", {
+      p_client_id: "client-1",
+      p_new_stage: "qualified",
+    });
   });
 
-  it("returns 500 for invalid stage value (DB enum rejection)", async () => {
+  it("rejects invalid stage transition via RPC", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
@@ -862,17 +905,42 @@ describe("PATCH /api/clients/[id]", () => {
             Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
         });
       }
-      return makeChain({
-        single: () =>
-          Promise.resolve({ data: { id: "client-1" }, error: null }),
-      });
+      return makeChain();
+    });
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { message: "Stage transition from new to viewed is not allowed" },
     });
 
     const mod = await import("../[id]/route");
     const res = await mod.PATCH(
       new NextRequest("http://localhost/api/clients/client-1", {
         method: "PATCH",
-        body: JSON.stringify({ stage: "invalid_stage" }),
+        body: JSON.stringify({ stage: "viewed" }),
+      }),
+      { params: Promise.resolve({ id: "client-1" }) }
+    );
+
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects stage+field mixed PATCH", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    mockFrom = vi.fn((table: string) => {
+      if (table === "workspace_members") {
+        return makeChain({
+          single: () =>
+            Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
+        });
+      }
+      return makeChain();
+    });
+
+    const mod = await import("../[id]/route");
+    const res = await mod.PATCH(
+      new NextRequest("http://localhost/api/clients/client-1", {
+        method: "PATCH",
+        body: JSON.stringify({ name: "New Name", stage: "qualified" }),
       }),
       { params: Promise.resolve({ id: "client-1" }) }
     );
@@ -889,7 +957,6 @@ describe("PATCH /api/clients/[id]", () => {
             Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }),
         });
       }
-      // Client not found in ws-1
       return makeChain({
         single: () =>
           Promise.resolve({ data: null, error: { code: "PGRST116" } }),
@@ -941,7 +1008,8 @@ describe("PATCH /api/clients/[id]", () => {
 });
 
 // ===========================================================================
-// DELETE /api/clients/[id] -- soft-delete
+// DELETE /api/clients/[id] -- soft-delete (Owner Only)
+// Per client-contract §4.5, §5.1: Member = CRU, Owner = CRUD.
 // ===========================================================================
 
 describe("DELETE /api/clients/[id]", () => {
@@ -953,6 +1021,8 @@ describe("DELETE /api/clients/[id]", () => {
     DELETE = mod.DELETE;
   });
 
+  // --- Error: Authentication ---
+
   it("returns 401 when unauthenticated", async () => {
     mockGetUser.mockResolvedValue({ data: { user: null }, error: null });
 
@@ -962,7 +1032,11 @@ describe("DELETE /api/clients/[id]", () => {
     );
 
     expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe("UNAUTHENTICATED");
   });
+
+  // --- Error: Workspace Membership ---
 
   it("returns 403 when user has no workspace membership", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
@@ -983,7 +1057,61 @@ describe("DELETE /api/clients/[id]", () => {
     );
 
     expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe("WORKSPACE_ACCESS_DENIED");
   });
+
+  // --- Error: Member denied (FORBIDDEN) ---
+
+  it("returns 403 when member tries to delete (owner-only)", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u-member" } }, error: null });
+    mockFrom = vi.fn((table: string) => {
+      if (table === "workspace_members") {
+        return makeChain({
+          single: () =>
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "member" }, error: null }),
+        });
+      }
+      return makeChain();
+    });
+
+    const mod = await import("../[id]/route");
+    const res = await mod.DELETE(
+      new NextRequest("http://localhost/api/clients/client-1", { method: "DELETE" }),
+      { params: Promise.resolve({ id: "client-1" }) }
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe("FORBIDDEN");
+  });
+
+  // --- Error: Admin denied (FORBIDDEN) ---
+
+  it("returns 403 when admin tries to delete (owner-only)", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u-admin" } }, error: null });
+    mockFrom = vi.fn((table: string) => {
+      if (table === "workspace_members") {
+        return makeChain({
+          single: () =>
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "admin" }, error: null }),
+        });
+      }
+      return makeChain();
+    });
+
+    const mod = await import("../[id]/route");
+    const res = await mod.DELETE(
+      new NextRequest("http://localhost/api/clients/client-1", { method: "DELETE" }),
+      { params: Promise.resolve({ id: "client-1" }) }
+    );
+
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error.code).toBe("FORBIDDEN");
+  });
+
+  // --- Error: Client not found ---
 
   it("returns 404 when client not found", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
@@ -994,6 +1122,7 @@ describe("DELETE /api/clients/[id]", () => {
             Promise.resolve({ data: { workspace_id: "ws-1", role: "owner" }, error: null }),
         });
       }
+      // Client lookup returns nothing
       const chain = makeChain();
       chain.select = vi.fn(() => chain);
       chain.eq = vi.fn(() => chain);
@@ -1009,11 +1138,48 @@ describe("DELETE /api/clients/[id]", () => {
     );
 
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe("RESOURCE_NOT_FOUND");
   });
 
-  it("succeeds -- soft-deletes client", async () => {
-    let capturedUpdate: Record<string, unknown> | null = null;
+  // --- Error: closed_won cannot be deleted ---
+
+  it("returns 422 when deleting closed_won client", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    mockFrom = vi.fn((table: string) => {
+      if (table === "workspace_members") {
+        return makeChain({
+          single: () =>
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "owner" }, error: null }),
+        });
+      }
+      const chain = makeChain();
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.is = vi.fn(() => chain);
+      chain.single = vi.fn(() =>
+        Promise.resolve({ data: { id: "client-1", stage: "closed_won" }, error: null })
+      );
+      return chain;
+    });
+
+    const mod = await import("../[id]/route");
+    const res = await mod.DELETE(
+      new NextRequest("http://localhost/api/clients/client-1", { method: "DELETE" }),
+      { params: Promise.resolve({ id: "client-1" }) }
+    );
+
+    expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  // --- Success: Owner soft-deletes client ---
+
+  it("owner soft-deletes client successfully (200)", async () => {
+    const now = "2026-08-02T10:30:00Z";
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    mockRpc.mockResolvedValue({ data: { deleted: true, deletedAt: now }, error: null });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({
@@ -1028,10 +1194,6 @@ describe("DELETE /api/clients/[id]", () => {
       chain.single = vi.fn(() =>
         Promise.resolve({ data: { id: "client-1", stage: "new" }, error: null })
       );
-      chain.update = vi.fn((data: unknown) => {
-        capturedUpdate = data as Record<string, unknown>;
-        return chain;
-      });
       return chain;
     });
 
@@ -1044,19 +1206,25 @@ describe("DELETE /api/clients/[id]", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.deleted).toBe(true);
-    const cu = capturedUpdate as unknown as Record<string, unknown>;
-    expect(cu.deleted_at).toBeDefined();
-    expect(typeof cu.deleted_at).toBe("string");
+    expect(body.data.deletedAt).toBe(now);
+    expect(body.error).toBeNull();
+    // Verify RPC was called with the correct client ID
+    expect(mockRpc).toHaveBeenCalledWith("soft_delete_client", { p_client_id: "client-1" });
   });
 
-  it("member can soft-delete own workspace client", async () => {
-    let updateCalled = false;
-    mockGetUser.mockResolvedValue({ data: { user: { id: "u-member" } }, error: null });
+  // --- Error: RPC failure ---
+
+  it("returns 500 on RPC error -- sanitized", async () => {
+    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { code: "XX000", message: "disk full at /var/lib/postgresql/data" },
+    });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({
           single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1", role: "member" }, error: null }),
+            Promise.resolve({ data: { workspace_id: "ws-1", role: "owner" }, error: null }),
         });
       }
       const chain = makeChain();
@@ -1066,37 +1234,7 @@ describe("DELETE /api/clients/[id]", () => {
       chain.single = vi.fn(() =>
         Promise.resolve({ data: { id: "client-1", stage: "new" }, error: null })
       );
-      chain.update = vi.fn(() => {
-        updateCalled = true;
-        return chain;
-      });
       return chain;
-    });
-
-    const mod = await import("../[id]/route");
-    const res = await mod.DELETE(
-      new NextRequest("http://localhost/api/clients/client-1", { method: "DELETE" }),
-      { params: Promise.resolve({ id: "client-1" }) }
-    );
-
-    expect(res.status).toBe(200);
-    expect(updateCalled).toBe(true);
-  });
-
-  it("returns 500 on delete error -- sanitized", async () => {
-    mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
-    mockFrom = vi.fn((table: string) => {
-      if (table === "workspace_members") {
-        return makeChain({
-          single: () =>
-            Promise.resolve({ data: { workspace_id: "ws-1", role: "owner" }, error: null }),
-        });
-      }
-      return makeChain({
-        terminal: { data: null, error: { code: "XX000", message: "disk full" } },
-        single: () =>
-          Promise.resolve({ data: { id: "client-1", stage: "new" }, error: null }),
-      });
     });
 
     const mod = await import("../[id]/route");
@@ -1108,7 +1246,11 @@ describe("DELETE /api/clients/[id]", () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBeDefined();
+    expect(body.error).not.toContain("disk");
+    expect(body.error).not.toContain("postgresql");
   });
+
+  // --- Error: Cross-workspace ---
 
   it("cross-workspace delete returns 404", async () => {
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
@@ -1134,5 +1276,7 @@ describe("DELETE /api/clients/[id]", () => {
     );
 
     expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe("RESOURCE_NOT_FOUND");
   });
 });

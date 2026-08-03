@@ -66,7 +66,7 @@ export default function ClientDetailPage() {
       const resp = await fetch(`/api/clients/${clientId}`);
       if (!resp.ok) throw new Error("加载失败");
       const json = await resp.json();
-      setClient(json as ClientData);
+      setClient((json.data ?? json) as ClientData);
     } catch (e) {
       setLoadError((e as Error).message);
     }

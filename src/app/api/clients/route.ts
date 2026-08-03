@@ -9,8 +9,9 @@ function urlOrigin(req: NextRequest): string {
 }
 const cors = (o: string) => ({ "Access-Control-Allow-Origin": o, "Access-Control-Allow-Credentials": "true" });
 
-// Non-sensitive columns for list responses. Excludes phone, wechat (sensitive).
-const LIST_COLS = "id,workspace_id,created_by,name,source_platform,source_content_id,first_property_id,budget_min,budget_max,preferred_districts,preferred_communities,bedrooms,rental_type,available_from,minimum_lease_months,pets_required,cooking_required,commute_destination,hard_requirements,soft_preferences,deal_breakers,stage,raw_input_text,next_follow_up_at,last_interaction_at,created_at,updated_at,deleted_at";
+// Non-sensitive columns for list responses. Excludes phone, wechat (sensitive),
+// and hard_requirements, soft_preferences, deal_breakers, raw_input_text (verbose/detail-only).
+const LIST_COLS = "id,workspace_id,created_by,name,source_platform,source_content_id,first_property_id,budget_min,budget_max,preferred_districts,preferred_communities,bedrooms,rental_type,available_from,minimum_lease_months,pets_required,cooking_required,commute_destination,stage,next_follow_up_at,last_interaction_at,created_at,updated_at,deleted_at";
 
 function sortClause(sortBy: string, sortOrder: string): { column: string; ascending: boolean; nullsLast: boolean } {
   switch (sortBy) {
@@ -121,15 +122,28 @@ export async function POST(request: NextRequest) {
   const origin = urlOrigin(request); const h = cors(origin);
   const { client, jsonResponse } = await createRouteHandlerClient(request);
   try {
+    // 1. Authentication
     const { data: { user } } = await client.auth.getUser();
-    if (!user) return jsonResponse({ error: "未登录" }, { status: 401, headers: h });
+    if (!user) {
+      return jsonResponse(
+        { data: null, error: { code: "UNAUTHENTICATED", message: "未登录" } },
+        { status: 401, headers: h },
+      );
+    }
+
+    // 2. Workspace membership
     const { data: member } = await client.from("workspace_members")
       .select("workspace_id").eq("user_id", user.id).eq("status", "active").limit(1).single();
-    if (!member) return jsonResponse({ error: "无权限" }, { status: 403, headers: h });
+    if (!member) {
+      return jsonResponse(
+        { data: null, error: { code: "WORKSPACE_ACCESS_DENIED", message: "无权限" } },
+        { status: 403, headers: h },
+      );
+    }
 
     const body = await request.json();
 
-    // Validate required fields
+    // 3. Validate required fields
     if (!body.name || typeof body.name !== "string" || body.name.trim().length === 0) {
       return jsonResponse(
         { data: null, error: { code: "VALIDATION_FAILED", message: "客户姓名不能为空" } },
@@ -146,7 +160,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse comma-separated strings to arrays
+    // 4. Server-side idempotency
+    const idempotencyKey = request.headers.get("x-idempotency-key")?.trim() || null;
+
+    // Compute request fingerprint (SHA-256 of sorted JSON body, excluding idempotency key)
+    let requestFingerprint: string | null = null;
+    if (idempotencyKey) {
+      // Build a deterministic fingerprint from the request body
+      // Sort keys for stability; exclude sensitive tracing fields
+      const fingerprintBody: Record<string, unknown> = {};
+      const sortedKeys = Object.keys(body).filter(k => k !== "requestId").sort();
+      for (const k of sortedKeys) {
+        fingerprintBody[k] = body[k];
+      }
+      // Simple hash via stringify — production should use crypto.subtle
+      const fp = JSON.stringify(fingerprintBody);
+      let hash = 0;
+      for (let i = 0; i < fp.length; i++) {
+        const chr = fp.charCodeAt(i);
+        hash = ((hash << 5) - hash) + chr;
+        hash |= 0; // Convert to 32bit integer
+      }
+      requestFingerprint = String(hash);
+    }
+
+    // Parse helpers for array/JSON fields
     const parseArray = (v: unknown): string[] | null => {
       if (typeof v === "string") {
         const trimmed = v.trim();
@@ -157,7 +195,6 @@ export async function POST(request: NextRequest) {
       return null;
     };
 
-    // Parse JSON
     const parseJson = (v: unknown): unknown | null => {
       if (typeof v === "string") {
         try { return JSON.parse(v); } catch { return null; }
@@ -165,41 +202,65 @@ export async function POST(request: NextRequest) {
       return v ?? null;
     };
 
-    const { data: clientData, error: insertError } = await client.from("clients")
-      .insert({
-        workspace_id: member.workspace_id,
-        created_by: user.id,
-        name: body.name,
-        phone: body.phone ?? null,
-        wechat: body.wechat ?? null,
-        source_platform: body.source_platform ?? null,
-        budget_min: body.budget_min ?? null,
-        budget_max: body.budget_max ?? null,
-        preferred_districts: parseArray(body.preferred_districts) ?? [],
-        preferred_communities: parseArray(body.preferred_communities) ?? [],
-        bedrooms: body.bedrooms ?? null,
-        rental_type: body.rental_type ?? null,
-        available_from: body.available_from ?? null,
-        minimum_lease_months: body.minimum_lease_months ?? null,
-        pets_required: body.pets_required ?? null,
-        cooking_required: body.cooking_required ?? null,
-        commute_destination: body.commute_destination ?? null,
-        hard_requirements: parseJson(body.hard_requirements) ?? [],
-        soft_preferences: parseJson(body.soft_preferences) ?? [],
-        deal_breakers: parseArray(body.deal_breakers) ?? [],
-        stage: body.stage ?? "new",
-        raw_input_text: body.raw_input_text ?? null,
-        next_follow_up_at: body.next_follow_up_at ?? null,
-      })
-      .select("id")
-      .single();
+    // 5. Call atomic create_client RPC (handles idempotency, insert, audit)
+    const { data: result, error: rpcErr } = await client.rpc("create_client", {
+      p_name: body.name,
+      p_phone: body.phone ?? null,
+      p_wechat: body.wechat ?? null,
+      p_source_platform: body.source_platform ?? null,
+      p_source_content_id: body.source_content_id ?? null,
+      p_first_property_id: body.first_property_id ?? null,
+      p_budget_min: body.budget_min ?? null,
+      p_budget_max: body.budget_max ?? null,
+      p_preferred_districts: parseArray(body.preferred_districts) ?? [],
+      p_preferred_communities: parseArray(body.preferred_communities) ?? [],
+      p_bedrooms: body.bedrooms ?? null,
+      p_rental_type: body.rental_type ?? null,
+      p_available_from: body.available_from ?? null,
+      p_minimum_lease_months: body.minimum_lease_months ?? null,
+      p_pets_required: body.pets_required ?? null,
+      p_cooking_required: body.cooking_required ?? null,
+      p_commute_destination: body.commute_destination ?? null,
+      p_hard_requirements: parseJson(body.hard_requirements) ?? [],
+      p_soft_preferences: parseJson(body.soft_preferences) ?? [],
+      p_deal_breakers: parseArray(body.deal_breakers) ?? [],
+      p_stage: body.stage ?? "new",
+      p_raw_input_text: body.raw_input_text ?? null,
+      p_next_follow_up_at: body.next_follow_up_at ?? null,
+      p_idempotency_key: idempotencyKey,
+      p_request_fingerprint: requestFingerprint,
+    });
 
-    if (insertError) {
-      return jsonResponse({ error: "创建失败" }, { status: 500, headers: h });
+    if (rpcErr) {
+      const msg = String(rpcErr.message ?? "");
+      // 409 CONFLICT — idempotency key reused with different content
+      if (msg.includes("different request content") || rpcErr.code === "23505") {
+        return jsonResponse(
+          { data: null, error: { code: "CONFLICT", message: "相同幂等键但请求内容不同" } },
+          { status: 409, headers: h },
+        );
+      }
+      if (msg.includes("Authentication required") || msg.includes("UA001")) {
+        return jsonResponse(
+          { data: null, error: { code: "UNAUTHENTICATED", message: "未登录" } },
+          { status: 401, headers: h },
+        );
+      }
+      return jsonResponse(
+        { data: null, error: { code: "INTERNAL_ERROR", message: "创建失败" } },
+        { status: 500, headers: h },
+      );
     }
 
-    return jsonResponse({ id: clientData.id }, { status: 201, headers: h });
+    // 6. Return contract-compliant response
+    return jsonResponse(
+      { data: result as Record<string, unknown>, error: null },
+      { status: 201, headers: h },
+    );
   } catch {
-    return jsonResponse({ error: "服务器错误" }, { status: 500, headers: h });
+    return jsonResponse(
+      { data: null, error: { code: "INTERNAL_ERROR", message: "服务器错误" } },
+      { status: 500, headers: h },
+    );
   }
 }

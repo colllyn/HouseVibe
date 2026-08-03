@@ -40,7 +40,8 @@ export default function EditClientPage() {
   React.useEffect(() => {
     fetch(`/api/clients/${clientId}`)
       .then((r) => { if (!r.ok) throw new Error("加载失败"); return r.json(); })
-      .then((data) => {
+      .then((json) => {
+        const data = json.data ?? json;
         setFormData({
           name: data.name ?? "",
           phone: data.phone ?? "",
@@ -84,13 +85,31 @@ export default function EditClientPage() {
     setSubmitError(null);
 
     try {
-      const resp = await fetch(`/api/clients/${clientId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-      const result = await resp.json();
-      if (!resp.ok) { setSubmitError(result.error ?? "保存失败"); setIsSubmitting(false); return; }
+      // Stage changes must go through set_client_stage RPC — send separately if changed
+      const { stage: newStage, ...patchData } = formData;
+
+      // 1. Update non-stage fields
+      if (Object.keys(patchData).length > 0) {
+        const resp = await fetch(`/api/clients/${clientId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patchData),
+        });
+        const result = await resp.json();
+        if (!resp.ok) { setSubmitError(result.error?.message ?? "保存失败"); setIsSubmitting(false); return; }
+      }
+
+      // 2. Send stage-only PATCH if stage is present (routes through set_client_stage RPC)
+      if (newStage !== undefined && newStage !== null && newStage !== "") {
+        const stageResp = await fetch(`/api/clients/${clientId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stage: newStage }),
+        });
+        const stageResult = await stageResp.json();
+        if (!stageResp.ok) { setSubmitError(stageResult.error?.message ?? "阶段变更失败"); setIsSubmitting(false); return; }
+      }
+
       window.location.href = `/clients/${clientId}`;
     } catch { setSubmitError("保存失败，请重试"); setIsSubmitting(false); }
   };

@@ -66,28 +66,62 @@ function optionalBoolean() {
   ) as z.ZodEffects<z.ZodOptional<z.ZodBoolean>>;
 }
 
+// Helper: coerce comma-separated string to array, pass through arrays, empty string → []
+function stringToArray() {
+  return z.preprocess(
+    (v) => {
+      if (v === "" || v === null || v === undefined) return [];
+      if (Array.isArray(v)) return v;
+      if (typeof v === "string") return v.split(",").map(s => s.trim()).filter(Boolean);
+      return v;
+    },
+    z.array(z.string())
+  );
+}
+
+// Helper: coerce JSON-string to array of records, pass through arrays
+function stringToJsonArray() {
+  return z.preprocess(
+    (v) => {
+      if (v === "" || v === null || v === undefined) return [];
+      if (Array.isArray(v)) return v;
+      if (typeof v === "string") {
+        try { const parsed = JSON.parse(v); return Array.isArray(parsed) ? parsed : []; }
+        catch { return []; }
+      }
+      return v;
+    },
+    z.array(z.record(z.unknown()))
+  );
+}
+
 export const UpdateClientInputSchema = z.object({
-  name: z.string().min(1, "姓名不能为空").max(100, "姓名最多 100 字").optional(),
-  phone: z.string().optional(),
-  wechat: z.string().optional(),
-  source_platform: z.string().optional(),
-  budget_min: optionalNumber(z.coerce.number().int().positive("预算下限必须大于 0")),
-  budget_max: optionalNumber(z.coerce.number().int().positive("预算上限必须大于 0")),
-  preferred_districts: z.string().optional(),
-  preferred_communities: z.string().optional(),
+  name: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "") ? undefined : v,
+    z.string().min(1, "姓名不能为空").max(100, "姓名最多 100 字").optional()
+  ),
+  phone: z.preprocess((v) => v === "" ? null : v, z.string().max(30).optional().nullable()),
+  wechat: z.preprocess((v) => v === "" ? null : v, z.string().max(100).optional().nullable()),
+  source_platform: z.preprocess((v) => v === "" ? null : v, z.string().max(50).optional().nullable()),
+  source_content_id: z.preprocess((v) => v === "" ? null : v, z.string().uuid().optional().nullable()),
+  first_property_id: z.preprocess((v) => v === "" ? null : v, z.string().uuid().optional().nullable()),
+  budget_min: optionalNumber(z.coerce.number().int().min(0)),
+  budget_max: optionalNumber(z.coerce.number().int().min(0)),
+  preferred_districts: stringToArray().optional(),
+  preferred_communities: stringToArray().optional(),
   bedrooms: optionalNumber(z.coerce.number().int().min(0).max(20)),
-  rental_type: z.string().optional(),
-  available_from: z.string().optional(),
-  minimum_lease_months: optionalNumber(z.coerce.number().int().positive()),
+  rental_type: z.preprocess((v) => (v === "" ? null : v), z.enum(["whole_unit", "shared"]).optional().nullable()),
+  available_from: z.preprocess((v) => v === "" ? null : v, z.string().optional().nullable()),
+  minimum_lease_months: optionalNumber(z.coerce.number().int().min(0)),
   pets_required: optionalBoolean(),
   cooking_required: optionalBoolean(),
-  commute_destination: z.string().optional(),
-  hard_requirements: z.string().optional(),
-  soft_preferences: z.string().optional(),
-  deal_breakers: z.string().optional(),
-  stage: ClientStageEnum.optional(),
-  raw_input_text: z.string().optional(),
-  next_follow_up_at: z.string().optional(),
+  commute_destination: z.preprocess((v) => v === "" ? null : v, z.string().max(200).optional().nullable()),
+  hard_requirements: stringToJsonArray().optional(),
+  soft_preferences: stringToJsonArray().optional(),
+  deal_breakers: stringToArray().optional(),
+  raw_input_text: z.preprocess((v) => v === "" ? null : v, z.string().max(10000).optional().nullable()),
+  next_follow_up_at: z.preprocess((v) => v === "" ? null : v, z.string().optional().nullable()),
+  // Note: stage is NOT included — it must be changed via the stage API/RPC only.
 }).refine(
   (d) => d.budget_min == null || d.budget_max == null || d.budget_min <= d.budget_max,
   { message: "预算下限不能大于预算上限", path: ["budget_min"] }
