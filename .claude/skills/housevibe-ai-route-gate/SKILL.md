@@ -39,8 +39,10 @@ This gate is sourced from the following frozen contracts:
 
 This gate verifies every AI API route under `src/app/api/ai/**/route.ts`. Currently:
 
-- `POST /api/ai/parse-property-search` — P3-AI-004
+- `POST /api/ai/parse-property-search` — P3-AI-004 (semantic_search entitlement)
+- `POST /api/ai/extract-property` — P3-AI-083 (ai_data_extraction entitlement)
 
+Each route uses its own precise entitlement, narrow DTO, and no shared prompt/retry logic.
 Future AI routes (e.g., P3-AI-005 Vision) must be added to this gate when implemented.
 
 ## Agent Gate
@@ -397,38 +399,43 @@ Every hit must be explained. Real skips in AI route paths must FAIL.
 
 Ask `quality-reviewer` to perform a final read-only review of:
 
-1. Route file: `src/app/api/ai/parse-property-search/route.ts`
-2. Handler: `src/lib/ai/routes/parse-property-search-handler.ts`
-3. Route tests: `src/app/api/ai/parse-property-search/__tests__/route.test.ts`
+1. Route files: `src/app/api/ai/parse-property-search/route.ts`, `src/app/api/ai/extract-property/route.ts`
+2. Handlers: `src/lib/ai/routes/parse-property-search-handler.ts`, `src/lib/ai/routes/extract-property-handler.ts`
+3. Route tests: `src/app/api/ai/parse-property-search/__tests__/route.test.ts`, `src/app/api/ai/extract-property/__tests__/route.test.ts`
 4. AI types: `src/lib/ai/types.ts` (error types, provider interface, input/output DTOs)
-5. AI schemas: `src/lib/ai/schemas.ts` (PropertySearchFilterSchema — strict check)
+5. AI schemas: `src/lib/ai/schemas.ts` (PropertySearchFilterSchema, PropertyExtractionOutputSchema — strict checks)
 
 `data-security-engineer` must independently confirm:
 - 401/403/422 responses do NOT trigger text fallback
-- Client workspaceId is rejected by strict schema
+- Client workspaceId is rejected by strict schema on both routes
 - No Service Role key in route code
 - No DEEPSEEK_API_KEY read in route code
 - No NEXT_PUBLIC_DEEPSEEK in route code
-- AI_REQUEST_ABORTED rethrows (no 499, no secondary response)
-- Search query is not persisted to database
-- Error responses do not leak query, key, prompt, requestId, or upstreamStatus
-- semantic_search entitlement is not bypassable
+- AI_REQUEST_ABORTED rethrows (no 499, no secondary response) on both routes
+- Search query / extraction text is not persisted to database
+- Error responses do not leak query, text, key, prompt, requestId, or upstreamStatus
+- Each route uses its own precise entitlement (semantic_search ≠ ai_data_extraction)
 - property_matching does not substitute for semantic_search
+- request.signal is forwarded to Provider on both routes
+- Provider does NOT receive workspaceId/userId from client on either route
 
 `quality-reviewer` must confirm:
 - P0 = 0, P1 = 0
 - Frontmatter is correct
 - `disable-model-invocation: true`
 - All contract sections are covered
-- Auth, workspace, entitlement checks present and in correct order
-- Schema is strict (rejects extra fields)
-- Provider boundary is clean (no prompt/retry/model logic in route)
+- Auth, workspace, entitlement checks present and in correct order on both routes
+- Each route uses its own distinct entitlement (no sharing)
+- Schema is strict (rejects extra fields) on both routes
+- Provider boundary is clean (no prompt/retry/model logic in either route)
 - Error mapping matches contract
 - AI_REQUEST_ABORTED rethrows (not wrapped in Response)
 - Unknown errors → 500
-- No text fallback in route
-- No database writes from route
+- No text fallback in any route
+- No database writes from any route
 - All tests use Mock Provider (no real DeepSeek calls)
+- request.signal forwarded on both routes
+- No shared or duplicated prompt/retry logic between routes
 
 ---
 
@@ -457,12 +464,15 @@ ALL of the following must be true:
 19. Unknown errors map to 500
 20. Error responses do not leak sensitive data
 21. No text fallback in route code
-22. No database writes in parse-property-search route
+22. No database writes in any route
 23. All tests use Mock Provider (no real network calls)
 24. No skipped/todo tests in AI route tests
-25. All 4 agents returned AGENT_READY
-26. Semantic Search Gate PASS
-27. AI Provider Gate PASS
+25. request.signal forwarded to Provider on both routes
+26. Each route uses distinct entitlement (no entitlement sharing)
+27. No shared prompt/retry/model logic between routes
+28. All 4 agents returned AGENT_READY
+29. Semantic Search Gate PASS
+30. AI Provider Gate PASS
 
 Any of the following MUST cause FAIL:
 
