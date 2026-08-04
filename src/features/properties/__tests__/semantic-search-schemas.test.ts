@@ -256,15 +256,49 @@ describe("SearchParseResponseSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects response with invalid requestId in data", () => {
+  // P3-AI-004-FINAL-CLOSE-078: new contract tests
+  it("accepts { data: { filters }, error: null }", () => {
+    const result = SearchParseResponseSchema.safeParse({
+      data: { filters: {} },
+      error: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts success with parsedQuery inside filters", () => {
+    // parsedQuery and unrecognizedTerms live inside filters (from AI provider)
     const result = SearchParseResponseSchema.safeParse({
       data: {
-        filters: {},
-        parsedQuery: "test",
-        unrecognizedTerms: [],
-        requestId: "not-uuid",
+        filters: {
+          districts: ["天河区"],
+          parsedQuery: "预算3500以内，天河区",
+          unrecognizedTerms: [],
+        },
       },
       error: null,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts { error: { code, message } } (data absent)", () => {
+    const result = SearchParseResponseSchema.safeParse({
+      error: { code: "TEST", message: "test error" },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing filters in data.success", () => {
+    const result = SearchParseResponseSchema.safeParse({
+      data: {},
+      error: null,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects non-null error with non-object data", () => {
+    const result = SearchParseResponseSchema.safeParse({
+      data: "string instead of object",
+      error: { code: "ERR", message: "err" },
     });
     expect(result.success).toBe(false);
   });

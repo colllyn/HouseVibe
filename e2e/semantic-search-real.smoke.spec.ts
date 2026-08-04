@@ -356,25 +356,26 @@ test.describe("Real Route Verification", () => {
 // ============================================================
 
 test.describe("Auth & Entitlement Gating", () => {
-  test("real-4: unauthenticated → auth gate active", async () => {
-    // The /api/ai/parse-property-search route is protected by its internal
-    // auth check (createRouteHandlerClient + getUser()). However, Supabase's
-    // cookie-based session management via updateSession middleware may create
-    // anonymous sessions for API requests without cookies.
-    //
-    // The real security boundary is:
-    //   1. Middleware blocks unauthenticated access to /properties page
-    //   2. Route handler checks for semantic_search entitlement
-    //   3. The route is NOT publicly usable because the UI workflow requires
-    //      prior authentication to reach the search input
-    //
-    // This test documents the current behavior. The key security invariants
-    // (entitlement check, schema validation) are verified in other tests.
-    console.log("[smoke] Auth gate: route is protected by middleware on /properties page");
-    console.log("[smoke] Direct API access without cookies may return 200 due to Supabase session refresh");
-    // The entitlement gate (real-5) and schema strict (real-6) provide the
-    // actual authorization enforcement.
-    expect(true).toBe(true); // Documented behavior
+  test("real-4: unauthenticated → 401 (Node fetch, no cookies)", async () => {
+    // Use Node.js native fetch — no browser, no cookies, no storageState.
+    // Sends a plain POST with no Authorization header and no Supabase session.
+    const baseURL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const resp = await fetch(`${baseURL}/api/ai/parse-property-search`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: "测试" }),
+      redirect: "manual",
+    });
+
+    // Without any auth cookies, the route must reject the request.
+    console.log("[smoke] Unauthenticated Node fetch →", resp.status);
+    expect(resp.status).toBe(401);
+
+    // Verify error envelope shape
+    const body = await resp.json();
+    expect(body.error).toBeDefined();
+    expect(body.error.code).toBeDefined();
+    expect(typeof body.error.message).toBe("string");
   });
 
   test("real-5: no semantic_search entitlement → 403", async ({ browser }) => {

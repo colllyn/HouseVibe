@@ -268,13 +268,12 @@ export function useSemanticSearch(onUrlUpdate: (params: URLSearchParams) => void
             return;
           }
 
-          // Accept response in either shape:
-          // - Contract shape: { data: { filters, parsedQuery, unrecognizedTerms, requestId } }
-          // - Minimal shape: { data: { filters } } where parsedQuery/unrecognizedTerms are inside filters
+          // Validate response against the contract envelope.
+          // Route returns: { data: { filters }, error: null }
           const parsed = SearchParseResponseSchema.safeParse(json);
-          const rawData = (json as Record<string, unknown>)?.data as Record<string, unknown> | null | undefined;
 
-          if (!rawData || typeof rawData !== "object") {
+          // Reject: schema mismatch OR error response
+          if (!parsed.success || parsed.data.error !== null) {
             setState((s) => ({
               ...s,
               phase: "error_validation",
@@ -284,27 +283,12 @@ export function useSemanticSearch(onUrlUpdate: (params: URLSearchParams) => void
             return;
           }
 
-          const rawFilters = rawData.filters as Record<string, unknown> | null | undefined;
-          if (!rawFilters || typeof rawFilters !== "object") {
-            setState((s) => ({
-              ...s,
-              phase: "error_validation",
-              message: "智能解析响应无效",
-              parserAvailable: true,
-            }));
-            return;
-          }
+          // Extract filters (validated by Zod)
+          const filters = parsed.data.data.filters;
 
-          // Use contract-validated data if available, otherwise extract from filters
-          const filters: SearchParseFilters = (parsed.success && parsed.data.data?.filters)
-            ? parsed.data.data.filters
-            : (rawFilters as unknown as SearchParseFilters);
-
-          const parsedQuery: string = (parsed.success && parsed.data.data?.parsedQuery)
-            || (typeof rawFilters.parsedQuery === "string" ? rawFilters.parsedQuery : "");
-
-          const unrecognizedTerms: string[] = (parsed.success && parsed.data.data?.unrecognizedTerms)
-            || (Array.isArray(rawFilters.unrecognizedTerms) ? rawFilters.unrecognizedTerms : []);
+          // parsedQuery and unrecognizedTerms are inside filters (from AI provider)
+          const parsedQuery = filters.parsedQuery ?? "";
+          const unrecognizedTerms = filters.unrecognizedTerms ?? [];
 
           // Convert AI filters to URL params
           const aiParams = filtersToUrlParams(filters);

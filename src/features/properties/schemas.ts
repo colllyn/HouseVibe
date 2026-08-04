@@ -323,25 +323,43 @@ export const SearchParseFiltersSchema = z.object({
   subwayText: z.string().optional(),
   sortBy: PropertySortByEnum.optional(),
   sortOrder: z.enum(["asc", "desc"]).optional(),
+  // AI provider metadata — passed through by route, used for UI display only
+  parsedQuery: z.string().optional(),
+  unrecognizedTerms: z.array(z.string()).optional(),
 });
 export type SearchParseFilters = z.infer<typeof SearchParseFiltersSchema>;
 
 /**
  * Standard API response envelope for POST /api/ai/parse-property-search.
+ *
+ * Route returns: { data: { filters }, error: null }
+ *   where filters is the validated PropertySearchFilters from the AI provider.
+ *
+ * Any 200 response that does NOT match this envelope is treated as invalid
+ * (no URL update, no fallback to text search).
  */
-export const SearchParseResponseSchema = z.object({
+// Success envelope: { data: { filters }, error: null }
+const SearchParseSuccessSchema = z.object({
   data: z.object({
     filters: SearchParseFiltersSchema,
-    parsedQuery: z.string(),
-    unrecognizedTerms: z.array(z.string()),
-    requestId: z.string().uuid(),
-  }).nullable(),
+  }),
+  error: z.null(),
+});
+
+// Error envelope: { data: null?, error: { code, message } }
+const SearchParseErrorSchema = z.object({
+  data: z.null().optional(),
   error: z.object({
     code: z.string(),
     message: z.string(),
     details: z.record(z.unknown()).optional(),
-  }).nullable(),
+  }),
 });
+
+export const SearchParseResponseSchema = z.union([
+  SearchParseSuccessSchema,
+  SearchParseErrorSchema,
+]);
 export type SearchParseResponse = z.infer<typeof SearchParseResponseSchema>;
 
 /** State machine phases for the semantic search UI. */

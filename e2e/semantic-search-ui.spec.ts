@@ -108,10 +108,9 @@ const VALID_200_BODY = {
       monthlyRentMax: 3500,
       bedrooms: 1,
       petsAllowed: true,
+      parsedQuery: "预算3500以内，天河区，一房，允许养宠物",
+      unrecognizedTerms: [],
     },
-    parsedQuery: "预算3500以内，天河区，一房，允许养宠物",
-    unrecognizedTerms: [],
-    requestId: VALID_UUID,
   },
   error: null,
 };
@@ -121,10 +120,9 @@ const MULTI_DISTRICT_200_BODY = {
     filters: {
       districts: ["天河区", "海珠区", "越秀区"],
       monthlyRentMax: 3000,
+      parsedQuery: "天河海珠越秀，3000以内",
+      unrecognizedTerms: [],
     },
-    parsedQuery: "天河海珠越秀，3000以内",
-    unrecognizedTerms: [],
-    requestId: VALID_UUID,
   },
   error: null,
 };
@@ -458,10 +456,11 @@ test.describe("Semantic Search UI", () => {
   test("20. HTML in input is treated as text, not rendered", async ({ page }) => {
     await mockParser(page, 200, {
       data: {
-        filters: { districts: ["<script>alert('xss')</script>"] },
-        parsedQuery: '<img src=x onerror=alert(1)>',
-        unrecognizedTerms: [],
-        requestId: VALID_UUID,
+        filters: {
+          districts: ["<script>alert('xss')</script>"],
+          parsedQuery: '<img src=x onerror=alert(1)>',
+          unrecognizedTerms: [],
+        },
       },
       error: null,
     });
