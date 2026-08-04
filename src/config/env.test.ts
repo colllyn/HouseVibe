@@ -138,15 +138,25 @@ describe("DeepSeek URL enforcement", () => {
     vi.unstubAllGlobals();
   });
 
+  /**
+   * Prevent leakage from .env.local into tests that expect optional AI URLs to be absent.
+   * The spread order ensures explicit vars override the forced undefined.
+   */
+  const NO_AI_URLS = {
+    DEEPSEEK_BASE_URL: undefined,
+    DEEPSEEK_VISION_BASE_URL_PRIMARY: undefined,
+    DEEPSEEK_VISION_BASE_URL_FALLBACK: undefined,
+  } as const;
+
   function ok(vars: Record<string, string | undefined>) {
     vi.stubGlobal("window", undefined);
-    setEnv({ ...MIN_VARS, ...vars });
+    setEnv({ ...MIN_VARS, ...NO_AI_URLS, ...vars });
     return getServerEnv();
   }
 
   function fails(vars: Record<string, string | undefined>) {
     vi.stubGlobal("window", undefined);
-    setEnv({ ...MIN_VARS, ...vars });
+    setEnv({ ...MIN_VARS, ...NO_AI_URLS, ...vars });
     expect(() => getServerEnv()).toThrow();
   }
 
