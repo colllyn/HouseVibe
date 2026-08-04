@@ -242,4 +242,13 @@ describe("redactPropertyInput", () => {
     expect(result.redactedText).toContain("12楼");
     expect(result.redactedText).toContain("30层");
   });
+
+  it("does not redact 内部 in property descriptions", () => {
+    const text = "房子内部装修很好，朝南，带阳台";
+    const result = redactPropertyInput(text);
+    expect(result.safeToSend).toBe(true);
+    expect(result.detectedCategories).not.toContain("internal_note");
+    expect(result.redactedText).toContain("内部");
+    expect(result.redactedText).toContain("装修很好");
+  });
 });

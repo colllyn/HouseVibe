@@ -350,8 +350,8 @@ describe("POST /api/ai/extract-property", () => {
     expect(capturedSignal).toBeDefined();
   });
 
-  // 14. Provider does NOT receive workspaceId/userId from client
-  it("14: provider receives server-resolved IDs, not client input", async () => {
+  // 14. Provider DTO does NOT contain userId, workspaceId, modelName, promptVersion
+  it("14: provider DTO excludes identity and config", async () => {
     let capturedInput: PropertyExtractionInput | null = null;
     const provider = makeMockProvider({
       extractProperty: async (input) => {
@@ -363,12 +363,15 @@ describe("POST /api/ai/extract-property", () => {
     await handler(makeRequest({ text: "天河区一房" }));
     expect(capturedInput).not.toBeNull();
     const input = capturedInput!;
-    // Server-resolved, not from client
-    expect(input.userId).toBe("user-1");
-    expect(input.workspaceId).toBe("ws-1");
-    // Only text + sourceType from client (text is redacted but property-only)
+    // Provider DTO must NOT have identity/config fields
+    expect(Object.keys(input)).not.toContain("userId");
+    expect(Object.keys(input)).not.toContain("workspaceId");
+    expect(Object.keys(input)).not.toContain("modelName");
+    expect(Object.keys(input)).not.toContain("promptVersion");
+    // Only text (redacted) + sourceType + requestId
     expect(input.text).toBe("天河区一房");
     expect(input.sourceType).toBe("text");
+    expect(input.requestId).toBeDefined();
   });
 
   // 15. Success envelope shape

@@ -77,7 +77,7 @@ export function redactPropertyInput(text: string): RedactResult {
     [/[一-鿿0-9]{1,6}?(?:栋|幢|号楼|单元|座)[一-鿿0-9-]{1,10}(?:单元|楼|层|室|号|房)[一-鿿0-9-]{0,10}/g, P_ADDRESS, "exact_address"],
     [/(?:门牌号|门牌|房号|房间号|门号)[:：\s]*\d{3,6}/g, P_ADDRESS, "exact_address"],
     [/(?:钥匙|key|门禁卡|密码锁密码|电子锁密码|门锁密码)[:：\s]*[^\s,，。.!！?？;；]{2,30}/gi, P_KEY, "key_location"],
-    [/(?:内部备注|内部|私密信息|注意事项|特殊要求)[:：\s]*[^。.!！?？\n]{2,200}/g, P_INTERNAL, "internal_note"],
+    [/(?:内部备注|私密信息|注意事项|特殊要求)[:：\s]*[^。.!！?？\n]{2,200}/g, P_INTERNAL, "internal_note"],
   ];
 
   for (const [pattern, placeholder, category] of rules) {

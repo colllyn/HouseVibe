@@ -128,11 +128,10 @@ interface AIUsage {
 }
 
 // --- extractProperty ---
-interface PropertyExtractionInput extends AIRequestContext {
+interface PropertyExtractionInput {
   text: string;
-  sourceType: 'text' | 'speech' | 'wechat';
-  workspaceId: string;
-  userId: string;
+  sourceType: "text" | "speech" | "wechat";
+  requestId: string;
 }
 
 interface PropertyExtractionResult {

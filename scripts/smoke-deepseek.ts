@@ -150,12 +150,8 @@ async function run(): Promise<void> {
   await record("2.1: Extract property facts from Chinese text", async () => {
     const result = await provider.extractProperty({
       requestId: "smoke-ep-001",
-      promptVersion: "1.0",
-      modelName: "deepseek-v4-flash",
       text: "天河区XX花园，精装修一房一厅，月租3500，押二付一，有电梯，可以养猫，2026年9月可入住",
       sourceType: "text",
-      workspaceId: "ws-smoke",
-      userId: "user-smoke",
     });
     return validateExtractionResult(result, "property");
   });

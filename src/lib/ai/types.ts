@@ -120,11 +120,10 @@ export interface RedactedClientFacts {
 
 // --- extractProperty ---
 
-export interface PropertyExtractionInput extends AIRequestContext {
+export interface PropertyExtractionInput {
   text: string;
   sourceType: "text" | "speech" | "wechat";
-  workspaceId: string;
-  userId: string;
+  requestId: string;
 }
 
 export interface PropertyExtractionResult {

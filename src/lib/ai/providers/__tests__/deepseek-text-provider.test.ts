@@ -315,12 +315,8 @@ describe("DeepSeekTextProvider", () => {
 
       await provider.extractProperty({
         requestId: "req-002",
-        promptVersion: "1.0",
-        modelName: "deepseek-v4-flash",
         text: "测试房源文本",
         sourceType: "text",
-        workspaceId: "ws-1",
-        userId: "user-1",
       });
 
       const body = getCallBody(fetch, 0);
@@ -818,12 +814,8 @@ describe("DeepSeekTextProvider", () => {
 
       await provider.extractProperty({
         requestId: "req-003",
-        promptVersion: "1.0",
-        modelName: "deepseek-v4-flash",
         text: "业主电话13800138000，微信wxid_test",
         sourceType: "text",
-        workspaceId: "ws-1",
-        userId: "user-1",
       });
 
       const body = getCallBody(fetch, 0);
@@ -974,12 +966,8 @@ describe("DeepSeekTextProvider", () => {
 
       const result = await provider.extractProperty({
         requestId: "req-prop-1",
-        promptVersion: "1.0",
-        modelName: "deepseek-v4-flash",
         text: "天河区XX花园，整租一房一厅，月租3500",
         sourceType: "text",
-        workspaceId: "ws-1",
-        userId: "user-1",
       });
 
       expect(result.data.title).toBe("天河区温馨一房");

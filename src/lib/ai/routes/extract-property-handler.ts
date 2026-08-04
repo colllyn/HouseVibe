@@ -245,16 +245,12 @@ export function createExtractPropertyHandler(
         );
       }
 
-      // 7. Call Provider with REDACTED text — never send raw PII
+      // 7. Call Provider with REDACTED text — minimal DTO, no identity
       const provider = getProvider();
       const providerInput: PropertyExtractionInput = {
         text: redaction.redactedText,
         sourceType,
-        userId: user.id,
-        workspaceId: member.workspace_id,
         requestId: crypto.randomUUID(),
-        promptVersion: "1.0",
-        modelName: "deepseek-v4-flash",
       };
 
       const result = await provider.extractProperty(
