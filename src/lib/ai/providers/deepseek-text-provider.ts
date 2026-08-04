@@ -4,6 +4,7 @@
 // Contract: docs/contracts/ai-contract.md v2.0
 // ============================================================
 
+import { z } from "zod";
 import { getServerEnv, type ServerEnv } from "@/config/env";
 import {
   DeepSeekProviderError,
@@ -25,6 +26,13 @@ import {
   ClientExtractionOutputSchema,
   ContentGenerationOutputSchema,
 } from "../schemas";
+import {
+  SEARCH_FILTER_FIXTURE,
+  SEARCH_FILTER_MINIMAL_FIXTURE,
+  XIAOHONGSHU_FIXTURE,
+  DOUYIN_FIXTURE,
+  WECHAT_MOMENTS_FIXTURE,
+} from "../fixtures";
 
 // ============================================================
 // Constants
@@ -60,6 +68,25 @@ function parseRetryAfter(header: string | null): number {
 
 function randomJitter(ms: number): number {
   return ms + Math.floor(Math.random() * 2000) + 1000;
+}
+
+/**
+ * Safe, deterministic fallback for parsedQuery.
+ * Contract §4.1: parsedQuery is required. If the model omits it,
+ * use the trimmed input query — it IS the normalized user intent.
+ * This only fills a missing field; it never overwrites or masks other errors.
+ */
+function ensureParsedQuery(
+  raw: unknown,
+  query: string,
+  _requestId: string
+): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const obj = raw as Record<string, unknown>;
+  if (!obj.parsedQuery || typeof obj.parsedQuery !== "string" || obj.parsedQuery.trim() === "") {
+    return { ...obj, parsedQuery: query.trim() };
+  }
+  return raw;
 }
 
 function extractUsage(data: Record<string, unknown> | undefined): AIUsage {
@@ -136,7 +163,11 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
       MAX_TOKENS.parsePropertySearch,
       signal
     );
-    return validateAndTransform(raw, PropertySearchFilterSchema, "parsePropertySearch", input.requestId);
+    // Safe fallback: if model omitted parsedQuery, use the input query.
+    // Contract §4.1: parsedQuery is required — it's the normalized user intent.
+    // Using the input query is deterministic and does not mask other Zod errors.
+    const withFallback = ensureParsedQuery(raw, input.query, input.requestId);
+    return validateAndTransform(withFallback, PropertySearchFilterSchema, "parsePropertySearch", input.requestId);
   }
 
   async generateContent(
@@ -468,11 +499,13 @@ function getSystemPrompt(capability: string): string {
 }
 
 function buildParsePropertySearchPrompt(query: string): string {
-  return `请分析以下自然语言搜索条件，提取结构化筛选参数。
+  return `你是一个房产搜索条件解析助手。请从用户输入中提取结构化筛选条件。
 
 用户搜索："${query}"
 
-请返回 JSON 对象，只包含以下字段（均为可选，按实际识别结果填写）：
+请返回一个 JSON 对象。以下字段中，筛选条件字段为可选（识别到时填写），但 parsedQuery 和 unrecognizedTerms 为必填：
+
+可选筛选字段（按实际识别结果填写，未识别到的字段不输出）：
 - districts: 区/县名称数组，如 ["天河区", "海珠区"]
 - communities: 小区/社区名称数组
 - monthlyRentMin: 最低月租（整数，元）
@@ -488,20 +521,21 @@ function buildParsePropertySearchPrompt(query: string): string {
 - subwayLines: 地铁线路数组，如 ["3号线", "5号线"]
 - sortBy: 排序字段（默认 "updated_at"）
 - sortOrder: "asc" 或 "desc"（默认 "desc"）
-- parsedQuery: 对用户意图的规范化描述（字符串）
-- unrecognizedTerms: 无法识别的词语数组（无则为空数组）
 
-输出示例：
-{
-  "districts": ["天河区"],
-  "monthlyRentMax": 3500,
-  "bedrooms": 1,
-  "petsAllowed": true,
-  "sortBy": "updated_at",
-  "sortOrder": "desc",
-  "parsedQuery": "预算3500以内，天河区，一房，允许养宠物",
-  "unrecognizedTerms": []
-}`;
+必填字段（每个响应都必须包含）：
+- parsedQuery: 字符串。对用户搜索意图的规范化中文描述。即使无法识别任何筛选条件，也必须填写此字段（直接复述用户搜索原文即可）。
+- unrecognizedTerms: 字符串数组。无法识别的词语列表，无则为空数组 []。
+
+示例 1（有筛选条件）：
+${JSON.stringify(SEARCH_FILTER_FIXTURE, null, 2)}
+
+示例 2（无筛选条件 — 仍然必须包含 parsedQuery 和 unrecognizedTerms）：
+${JSON.stringify(SEARCH_FILTER_MINIMAL_FIXTURE, null, 2)}
+
+重要规则：
+- 只返回 JSON 对象，不要输出任何其他文字、注释或 Markdown。
+- parsedQuery 必须始终存在且为非空字符串，unrecognizedTerms 必须始终为数组。
+- 不要输出 SQL 或代码。不要包含 Schema 中未定义的额外字段。`;
 }
 
 function buildExtractPropertyPrompt(
@@ -549,9 +583,33 @@ data 中可提取的字段：name, sourcePlatform, budgetMin, budgetMax, preferr
 function buildGenerateContentPrompt(
   input: ContentGenerationInput
 ): string {
-  return `请为以下房源生成${input.platform}平台的营销内容。
+  const platform = input.platform;
 
-平台: ${input.platform}
+  // Build the platform-specific schema definition and valid JSON example
+  let schemaDef: string;
+  let example: string;
+
+  switch (platform) {
+    case "xiaohongshu":
+      schemaDef = XIAOHONGSHU_SCHEMA_DEF;
+      example = JSON.stringify(XIAOHONGSHU_FIXTURE, null, 2);
+      break;
+    case "douyin":
+      schemaDef = DOUYIN_SCHEMA_DEF;
+      example = JSON.stringify(DOUYIN_FIXTURE, null, 2);
+      break;
+    case "wechat_moments":
+      schemaDef = WECHAT_MOMENTS_SCHEMA_DEF;
+      example = JSON.stringify(WECHAT_MOMENTS_FIXTURE, null, 2);
+      break;
+    default:
+      schemaDef = XIAOHONGSHU_SCHEMA_DEF;
+      example = JSON.stringify(XIAOHONGSHU_FIXTURE, null, 2);
+  }
+
+  return `你是一个房产营销内容生成助手。请根据房源信息为「${platform}」平台生成营销内容。
+
+平台: ${platform}
 房源信息: ${JSON.stringify(input.propertyFacts)}
 目标受众: ${input.targetAudience || "通用"}
 内容角度: ${input.contentAngle || "通用"}
@@ -561,12 +619,92 @@ function buildGenerateContentPrompt(
 展示缺点: ${input.showDrawbacks ? "是" : "否"}
 私信关键词: ${input.privateMessageKeyword || ""}
 
-请返回平台对应的 JSON 结构。对于小红书(xiaohongshu)：包含 titleOptions, coverText, hook, body, imageSequence, imageCaptions, factualSummary, interactionQuestion, privateMessageKeyword, hashtags, factsUsed, visualFactsUsed, missingInformation, riskFlags, complianceFlags, requiresFactReview。
-对于抖音(douyin)：包含 hookOptions, coverText, fullVoiceover, shots, subtitles, caption, commentCta, privateMessageKeyword, hashtags, missingShots, factsUsed, visualFactsUsed, missingInformation, riskFlags, complianceFlags, requiresFactReview。
-对于朋友圈(wechat_moments)：包含 copyOptions, nineGridSuggestion, shortCta, privateMessageKeyword, factsUsed, visualFactsUsed, riskFlags, complianceFlags, requiresFactReview。
+========================================
+输出 JSON Schema（严格遵循，逐字段输出）
+========================================
 
-对于所有平台，输出需包含 platform 字段标记平台类型。`;
+${schemaDef}
+
+========================================
+完整合法 JSON 示例（所有字段类型必须与此一致）
+========================================
+
+${example}
+
+========================================
+强制规则
+========================================
+
+1. 只输出 JSON 对象，不得输出 Markdown、代码块、解释或任何其他文字。
+2. 所有必填字段必须存在。数组字段即使为空也必须用 []，不得省略。
+3. imageSequence 的每一项必须是对象 { "order": 数字, "description": "字符串", "suggestedMediaType": "字符串" }，不得使用字符串。
+4. shots 的每一项必须是对象 { "order": 数字, "durationSeconds": 数字, "description": "字符串", "visualSuggestion": "字符串" }。
+5. factsUsed 的每一项必须是对象 { "field": "字段名", "value": "字段值" }，不得使用字符串。
+6. visualFactsUsed 的每一项必须是对象 { "mediaId": "字符串", "claim": "字符串" }。
+7. riskFlags 的每一项必须是对象 { "field": "字符串", "severity": "high|medium|low", "description": "字符串" }。
+8. complianceFlags 的每一项必须是对象 { "term": "字符串", "category": "字符串", "severity": "block|warn", "suggestion": "字符串" }。
+9. requiresFactReview 必须是布尔值 true 或 false，不得使用数组或其他类型。
+10. factualSummary 必须存在且为非空字符串，总结房源关键事实。
+11. 不要输出 schema 中未定义的额外字段。`;
 }
+
+// ============================================================
+// Platform-specific schema definitions (used in prompts)
+// ============================================================
+
+const XIAOHONGSHU_SCHEMA_DEF = `所有字段（platform 用于区分平台，所有字段均为必填除非标注"可选"）：
+
+platform: 字符串，固定值 "xiaohongshu"
+titleOptions: 字符串数组，标题候选（至少 1 个）
+coverText: 字符串，封面文案
+hook: 字符串，开篇钩子
+body: 字符串，正文
+imageSequence: 对象数组，每项结构：{ "order": 数字, "description": "图片描述", "suggestedMediaType": "photo|video" }
+imageCaptions: 字符串数组，每张图的配文
+factualSummary: 字符串（必填），基于房源事实的摘要
+drawbacks: 字符串（可选），缺点说明
+interactionQuestion: 字符串，互动提问
+privateMessageKeyword: 字符串，私信关键词
+hashtags: 字符串数组，话题标签（至少 1 个）
+factsUsed: 对象数组，每项结构：{ "field": "字段名", "value": "字段值" }
+visualFactsUsed: 对象数组，每项结构：{ "mediaId": "媒体ID", "claim": "声明" }（通常为空数组）
+missingInformation: 字符串数组，缺失的信息
+riskFlags: 对象数组，每项结构：{ "field": "字段名", "severity": "high|medium|low", "description": "风险描述" }（通常为空数组）
+complianceFlags: 对象数组，每项结构：{ "term": "术语", "category": "分类", "severity": "block|warn", "suggestion": "建议" }（通常为空数组）
+requiresFactReview: 布尔值 true/false（必填）`;
+
+const DOUYIN_SCHEMA_DEF = `所有字段（platform 用于区分平台，所有字段均为必填除非标注"可选"）：
+
+platform: 字符串，固定值 "douyin"
+hookOptions: 字符串数组，钩子候选（至少 1 个）
+coverText: 字符串，封面文案
+fullVoiceover: 字符串，完整口播文案
+shots: 对象数组，每项结构：{ "order": 数字, "durationSeconds": 数字, "description": "镜头描述", "visualSuggestion": "拍摄建议" }
+subtitles: 字符串，字幕
+caption: 字符串，视频描述文案
+commentCta: 字符串，评论引导
+privateMessageKeyword: 字符串，私信关键词
+hashtags: 字符串数组，话题标签（至少 1 个）
+missingShots: 字符串数组，缺失的镜头
+factsUsed: 对象数组，每项结构：{ "field": "字段名", "value": "字段值" }
+visualFactsUsed: 对象数组，每项结构：{ "mediaId": "媒体ID", "claim": "声明" }（通常为空数组）
+missingInformation: 字符串数组，缺失的信息
+riskFlags: 对象数组，每项结构：{ "field": "字段名", "severity": "high|medium|low", "description": "风险描述" }（通常为空数组）
+complianceFlags: 对象数组，每项结构：{ "term": "术语", "category": "分类", "severity": "block|warn", "suggestion": "建议" }（通常为空数组）
+requiresFactReview: 布尔值 true/false（必填）`;
+
+const WECHAT_MOMENTS_SCHEMA_DEF = `所有字段（platform 用于区分平台，所有字段均为必填除非标注"可选"）：
+
+platform: 字符串，固定值 "wechat_moments"
+copyOptions: 字符串数组，文案候选（至少 1 个）
+nineGridSuggestion: 字符串，九宫格建议
+shortCta: 字符串，简短行动号召
+privateMessageKeyword: 字符串，私信关键词
+factsUsed: 对象数组，每项结构：{ "field": "字段名", "value": "字段值" }
+visualFactsUsed: 对象数组，每项结构：{ "mediaId": "媒体ID", "claim": "声明" }（通常为空数组）
+riskFlags: 对象数组，每项结构：{ "field": "字段名", "severity": "high|medium|low", "description": "风险描述" }（通常为空数组）
+complianceFlags: 对象数组，每项结构：{ "term": "术语", "category": "分类", "severity": "block|warn", "suggestion": "建议" }（通常为空数组）
+requiresFactReview: 布尔值 true/false（必填）`;
 
 // ============================================================
 // Response Parsing & Validation
@@ -639,16 +777,24 @@ function parseResponseJson(
 
 function validateAndTransform<T>(
   raw: unknown,
-  schema: { parse: (data: unknown) => T },
+  schema: { parse: (data: unknown) => T; safeParse?: (data: unknown) => { success: boolean; error?: z.ZodError } },
   capability: string,
   requestId: string
 ): T {
   try {
     return schema.parse(raw);
-  } catch {
+  } catch (err) {
+    // Extract Zod issue details (safe: field paths + messages only, no raw data)
+    let zodDetails = "";
+    if (err instanceof z.ZodError) {
+      zodDetails = err.issues
+        .map((i) => `${i.path.join(".")}: ${i.message}`)
+        .join("; ");
+    }
+    const detailSuffix = zodDetails ? ` [${zodDetails}]` : "";
     throw new DeepSeekProviderError({
       code: "AI_INVALID_RESPONSE",
-      message: `${capability} 输出格式校验失败`,
+      message: `${capability} 输出格式校验失败${detailSuffix}`,
       requestId,
       retryable: false, // Zod failure → no retry (per contract §10.2)
       suggestedHttpStatus: 502,

@@ -1152,4 +1152,637 @@ describe("DeepSeekTextProvider", () => {
       expect(userContent).not.toContain("req-iso-1");
     });
   });
+
+  // ==========================================================
+  // P3-AI-PROMPT-SCHEMA-ALIGN-075: parsedQuery fallback
+  // ==========================================================
+  describe("parsedQuery fallback (P3-AI-PROMPT-SCHEMA-ALIGN-075)", () => {
+    it("P3-075-1: fills missing parsedQuery from input query", async () => {
+      const responseWithoutParsedQuery = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                districts: ["天河区"],
+                unrecognizedTerms: [],
+              }),
+            },
+            finish_reason: "stop",
+          },
+        ],
+      };
+
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse(responseWithoutParsedQuery)
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      const result = await provider.parsePropertySearch(
+        searchInput({ query: "天河区租房" })
+      );
+
+      expect(result.parsedQuery).toBe("天河区租房");
+      expect(result.districts).toEqual(["天河区"]);
+    });
+
+    it("P3-075-2: minimal query with missing parsedQuery → passes Schema via fallback", async () => {
+      const minimalResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                unrecognizedTerms: [],
+              }),
+            },
+            finish_reason: "stop",
+          },
+        ],
+      };
+
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse(minimalResponse)
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      const result = await provider.parsePropertySearch(
+        searchInput({ query: "广州租房" })
+      );
+
+      expect(result.parsedQuery).toBe("广州租房");
+      expect(result.unrecognizedTerms).toEqual([]);
+    });
+
+    it("P3-075-3: empty string parsedQuery → filled by fallback", async () => {
+      const response = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                parsedQuery: "",
+                unrecognizedTerms: [],
+              }),
+            },
+            finish_reason: "stop",
+          },
+        ],
+      };
+
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse(response)
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      const result = await provider.parsePropertySearch(
+        searchInput({ query: "海珠区整租" })
+      );
+
+      expect(result.parsedQuery).toBe("海珠区整租");
+    });
+
+    it("P3-075-4: valid parsedQuery from model is NOT overwritten", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse(validSearchResponse())
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      const result = await provider.parsePropertySearch(
+        searchInput({ query: "天河区3500以内一房能养猫" })
+      );
+
+      expect(result.parsedQuery).toBe("预算3500以内，天河区，一房，允许养宠物");
+    });
+
+    it("P3-075-5: vague query still returns complete object", async () => {
+      const vagueResponse = {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                parsedQuery: "广州找房子",
+                unrecognizedTerms: ["找房子"],
+              }),
+            },
+            finish_reason: "stop",
+          },
+        ],
+      };
+
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse(vagueResponse)
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      const result = await provider.parsePropertySearch(
+        searchInput({ query: "广州找房子" })
+      );
+
+      expect(result.parsedQuery).toBe("广州找房子");
+      expect(result.unrecognizedTerms).toEqual(["找房子"]);
+      expect(typeof result.parsedQuery).toBe("string");
+      expect(Array.isArray(result.unrecognizedTerms)).toBe(true);
+    });
+
+    it("P3-075-6: non-object response is NOT modified by fallback", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: '"just a string"',
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.parsePropertySearch(
+          searchInput({ query: "test" })
+        );
+        expect.unreachable("Should have thrown — string is not a valid object");
+      } catch (err) {
+        const e = err as DeepSeekProviderError;
+        expect(e.code).toBe("AI_INVALID_RESPONSE");
+      }
+    });
+  });
+
+  // ==========================================================
+  // P3-AI-PROMPT-SCHEMA-ALIGN-075: generateContent strict types
+  // ==========================================================
+  describe("generateContent strict types (P3-AI-PROMPT-SCHEMA-ALIGN-075)", () => {
+    it("P3-075-7: correct object arrays pass Zod", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  platform: "xiaohongshu",
+                  titleOptions: ["温馨一房 | 天河核心地段"],
+                  coverText: "温馨一房等你来",
+                  hook: "想要在天河区找到温馨的家吗？",
+                  body: "精装修一房，月租3500元。",
+                  imageSequence: [
+                    {
+                      order: 1,
+                      description: "客厅全景",
+                      suggestedMediaType: "photo",
+                    },
+                  ],
+                  imageCaptions: ["客厅"],
+                  factualSummary: "天河区XX花园一房，3500元/月",
+                  interactionQuestion: "你最看重什么？",
+                  privateMessageKeyword: "温馨一房",
+                  hashtags: ["#广州租房"],
+                  factsUsed: [
+                    { field: "district", value: "天河区" },
+                  ],
+                  visualFactsUsed: [],
+                  missingInformation: [],
+                  riskFlags: [],
+                  complianceFlags: [],
+                  requiresFactReview: false,
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      const result = await provider.generateContent({
+        requestId: "req-gc-075-1",
+        promptVersion: "1.0",
+        modelName: "deepseek-v4-flash",
+        platform: "xiaohongshu",
+        propertyFacts: {
+          title: "测试房源",
+          city: "广州",
+          district: "天河区",
+        },
+      });
+
+      expect(result.platform).toBe("xiaohongshu");
+      if (result.platform !== "xiaohongshu") throw new Error("wrong platform");
+      expect(result.titleOptions).toHaveLength(1);
+      expect(result.factualSummary).toBeTruthy();
+      expect(result.imageSequence).toHaveLength(1);
+      expect(result.imageSequence[0]).toEqual({
+        order: 1,
+        description: "客厅全景",
+        suggestedMediaType: "photo",
+      });
+      expect(result.factsUsed[0]).toEqual({
+        field: "district",
+        value: "天河区",
+      });
+      expect(result.riskFlags).toEqual([]);
+      expect(result.complianceFlags).toEqual([]);
+      expect(result.requiresFactReview).toBe(false);
+    });
+
+    it("P3-075-8: string instead of imageSequence object → rejected", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  platform: "xiaohongshu",
+                  titleOptions: ["test"],
+                  coverText: "test",
+                  hook: "test",
+                  body: "test",
+                  imageSequence: ["客厅照片", "卧室照片"],
+                  imageCaptions: [],
+                  factualSummary: "test",
+                  interactionQuestion: "test",
+                  privateMessageKeyword: "test",
+                  hashtags: ["#test"],
+                  factsUsed: [],
+                  visualFactsUsed: [],
+                  missingInformation: [],
+                  riskFlags: [],
+                  complianceFlags: [],
+                  requiresFactReview: false,
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.generateContent({
+          requestId: "req-gc-075-2",
+          promptVersion: "1.0",
+          modelName: "deepseek-v4-flash",
+          platform: "xiaohongshu",
+          propertyFacts: { title: "test" },
+        });
+        expect.unreachable("Should have thrown — imageSequence items must be objects");
+      } catch (err) {
+        const e = err as DeepSeekProviderError;
+        expect(e.code).toBe("AI_INVALID_RESPONSE");
+        expect(e.message).toContain("imageSequence");
+      }
+    });
+
+    it("P3-075-9: requiresFactReview as array → rejected", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  platform: "xiaohongshu",
+                  titleOptions: ["test"],
+                  coverText: "test",
+                  hook: "test",
+                  body: "test",
+                  imageSequence: [],
+                  imageCaptions: [],
+                  factualSummary: "test",
+                  interactionQuestion: "test",
+                  privateMessageKeyword: "test",
+                  hashtags: ["#test"],
+                  factsUsed: [],
+                  visualFactsUsed: [],
+                  missingInformation: [],
+                  riskFlags: [],
+                  complianceFlags: [],
+                  requiresFactReview: ["needs", "review"],
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.generateContent({
+          requestId: "req-gc-075-3",
+          promptVersion: "1.0",
+          modelName: "deepseek-v4-flash",
+          platform: "xiaohongshu",
+          propertyFacts: { title: "test" },
+        });
+        expect.unreachable("Should have thrown — requiresFactReview must be boolean");
+      } catch (err) {
+        const e = err as DeepSeekProviderError;
+        expect(e.code).toBe("AI_INVALID_RESPONSE");
+      }
+    });
+
+    it("P3-075-10: missing factualSummary → rejected", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  platform: "xiaohongshu",
+                  titleOptions: ["test"],
+                  coverText: "test",
+                  hook: "test",
+                  body: "test",
+                  imageSequence: [],
+                  imageCaptions: [],
+                  interactionQuestion: "test",
+                  privateMessageKeyword: "test",
+                  hashtags: ["#test"],
+                  factsUsed: [],
+                  visualFactsUsed: [],
+                  missingInformation: [],
+                  riskFlags: [],
+                  complianceFlags: [],
+                  requiresFactReview: false,
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.generateContent({
+          requestId: "req-gc-075-4",
+          promptVersion: "1.0",
+          modelName: "deepseek-v4-flash",
+          platform: "xiaohongshu",
+          propertyFacts: { title: "test" },
+        });
+        expect.unreachable("Should have thrown — factualSummary is required");
+      } catch (err) {
+        const e = err as DeepSeekProviderError;
+        expect(e.code).toBe("AI_INVALID_RESPONSE");
+      }
+    });
+
+    it("P3-075-11: factsUsed as strings → rejected", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  platform: "xiaohongshu",
+                  titleOptions: ["test"],
+                  coverText: "test",
+                  hook: "test",
+                  body: "test",
+                  imageSequence: [],
+                  imageCaptions: [],
+                  factualSummary: "test",
+                  interactionQuestion: "test",
+                  privateMessageKeyword: "test",
+                  hashtags: ["#test"],
+                  factsUsed: ["district: 天河区", "rent: 3500"],
+                  visualFactsUsed: [],
+                  missingInformation: [],
+                  riskFlags: [],
+                  complianceFlags: [],
+                  requiresFactReview: false,
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.generateContent({
+          requestId: "req-gc-075-5",
+          promptVersion: "1.0",
+          modelName: "deepseek-v4-flash",
+          platform: "xiaohongshu",
+          propertyFacts: { title: "test" },
+        });
+        expect.unreachable("Should have thrown — factsUsed items must be objects");
+      } catch (err) {
+        const e = err as DeepSeekProviderError;
+        expect(e.code).toBe("AI_INVALID_RESPONSE");
+      }
+    });
+
+    // Contract §11.5: only PropertySearchFilterSchema requires .strict().
+    // ContentGenerationOutputSchema uses discriminatedUnion — extra fields
+    // are silently stripped by Zod parse, not rejected. This is by design.
+    it("P3-075-12: parsePropertySearch extra fields rejected (strict mode)", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  districts: ["天河区"],
+                  parsedQuery: "test",
+                  unrecognizedTerms: [],
+                  injectedSql: "DROP TABLE properties;",
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.parsePropertySearch(searchInput());
+        expect.unreachable("Should have thrown — extra fields rejected by strict() on PropertySearchFilterSchema");
+      } catch (err) {
+        const e = err as DeepSeekProviderError;
+        expect(e.code).toBe("AI_INVALID_RESPONSE");
+      }
+    });
+  });
+
+  // ==========================================================
+  // P3-AI-PROMPT-SCHEMA-ALIGN-075: Regression safety
+  // ==========================================================
+  describe("Regression safety (P3-AI-PROMPT-SCHEMA-ALIGN-075)", () => {
+    it("P3-075-13: fix does not change max 2 requests", async () => {
+      const fetch = vi
+        .fn()
+        .mockResolvedValueOnce(mockFetchResponse({ error: "error" }, 500))
+        .mockResolvedValueOnce(mockFetchResponse({ error: "error" }, 500));
+
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.parsePropertySearch(searchInput());
+        expect.unreachable("Should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(DeepSeekProviderError);
+        expect(fetch).toHaveBeenCalledTimes(2);
+      }
+    });
+
+    it("P3-075-14: fix does not affect abort", async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const fetch = vi.fn();
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.parsePropertySearch(searchInput(), controller.signal);
+        expect.unreachable("Should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(DeepSeekProviderError);
+        const e = err as DeepSeekProviderError;
+        expect(e.code).toBe("AI_REQUEST_ABORTED");
+      }
+    });
+
+    it("P3-075-15: error message does not contain raw response content", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  platform: "xiaohongshu",
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      try {
+        await provider.generateContent({
+          requestId: "req-safe-1",
+          promptVersion: "1.0",
+          modelName: "deepseek-v4-flash",
+          platform: "xiaohongshu",
+          propertyFacts: { title: "test" },
+        });
+        expect.unreachable("Should have thrown");
+      } catch (err) {
+        const e = err as DeepSeekProviderError;
+        const serialized = JSON.stringify(e.toJSON());
+        expect(serialized).not.toContain("xiaohongshu");
+        expect(serialized).not.toContain('"platform"');
+      }
+    });
+
+    it("P3-075-16: douyin platform with correct object arrays passes", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  platform: "douyin",
+                  hookOptions: ["天河区好房推荐！"],
+                  coverText: "天河一房 | 3500/月",
+                  fullVoiceover: "今天带大家看一套好房...",
+                  shots: [
+                    {
+                      order: 1,
+                      durationSeconds: 3,
+                      description: "小区外景",
+                      visualSuggestion: "航拍小区全景",
+                    },
+                  ],
+                  subtitles: "天河好房",
+                  caption: "私信我看房",
+                  commentCta: "想看房的扣1",
+                  privateMessageKeyword: "天河一房",
+                  hashtags: ["#广州租房"],
+                  missingShots: [],
+                  factsUsed: [{ field: "district", value: "天河区" }],
+                  visualFactsUsed: [],
+                  missingInformation: [],
+                  riskFlags: [],
+                  complianceFlags: [],
+                  requiresFactReview: false,
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      const result = await provider.generateContent({
+        requestId: "req-gc-075-7",
+        promptVersion: "1.0",
+        modelName: "deepseek-v4-flash",
+        platform: "douyin",
+        propertyFacts: { title: "test", district: "天河区" },
+      });
+
+      expect(result.platform).toBe("douyin");
+      if (result.platform !== "douyin") throw new Error("wrong platform");
+      expect(result.shots).toHaveLength(1);
+      expect(result.shots[0]).toEqual({
+        order: 1,
+        durationSeconds: 3,
+        description: "小区外景",
+        visualSuggestion: "航拍小区全景",
+      });
+      expect(result.factsUsed[0]).toEqual({
+        field: "district",
+        value: "天河区",
+      });
+    });
+
+    it("P3-075-17: wechat_moments platform passes", async () => {
+      const fetch = vi.fn().mockResolvedValue(
+        mockFetchResponse({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  platform: "wechat_moments",
+                  copyOptions: ["天河区一房，3500元/月"],
+                  nineGridSuggestion: "客厅+卧室+小区环境",
+                  shortCta: "私信我看房",
+                  privateMessageKeyword: "天河一房",
+                  factsUsed: [{ field: "district", value: "天河区" }],
+                  visualFactsUsed: [],
+                  riskFlags: [],
+                  complianceFlags: [],
+                  requiresFactReview: false,
+                }),
+              },
+              finish_reason: "stop",
+            },
+          ],
+        })
+      );
+      const provider = createDeepSeekTextProvider(fetch, defaultConfig());
+
+      const result = await provider.generateContent({
+        requestId: "req-gc-075-8",
+        promptVersion: "1.0",
+        modelName: "deepseek-v4-flash",
+        platform: "wechat_moments",
+        propertyFacts: { title: "test", district: "天河区" },
+      });
+
+      expect(result.platform).toBe("wechat_moments");
+      if (result.platform !== "wechat_moments") throw new Error("wrong platform");
+      expect(result.copyOptions).toHaveLength(1);
+      expect(result.requiresFactReview).toBe(false);
+    });
+  });
 });
