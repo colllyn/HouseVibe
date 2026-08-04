@@ -128,10 +128,22 @@ export default defineConfig({
       },
       dependencies: ["setup"],
     },
+    // Real DeepSeek Semantic Search Smoke (P3-AI-004-REAL-ROUTE-UI-076)
+    // NOT in default CI — requires SMOKE_TEST=true and real DEEPSEEK_API_KEY
+    {
+      name: "semantic-search-real",
+      testMatch: /semantic-search-real\.smoke\.spec\.ts/,
+      fullyParallel: false,
+      use: {
+        browserName: "chromium",
+        storageState: "e2e/.auth/owner.json",
+      },
+      dependencies: ["setup"],
+    },
     // Default chromium (auth, admin, settings E2E — no storageState needed)
     {
       name: "chromium",
-      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows|semantic-search-ui)).*\.spec\.ts$/,
+      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows|semantic-search-ui|semantic-search-real)).*\.spec\.ts$/,
       use: { browserName: "chromium" },
     },
   ],

@@ -195,7 +195,8 @@ export function useSemanticSearch(onUrlUpdate: (params: URLSearchParams) => void
         const resp = await fetch("/api/ai/parse-property-search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(validation.data),
+          // Only send the query field — route schema is strict() and rejects extra fields
+          body: JSON.stringify({ query: validation.data.query }),
           signal: controller.signal,
         });
 
@@ -267,9 +268,13 @@ export function useSemanticSearch(onUrlUpdate: (params: URLSearchParams) => void
             return;
           }
 
+          // Accept response in either shape:
+          // - Contract shape: { data: { filters, parsedQuery, unrecognizedTerms, requestId } }
+          // - Minimal shape: { data: { filters } } where parsedQuery/unrecognizedTerms are inside filters
           const parsed = SearchParseResponseSchema.safeParse(json);
-          if (!parsed.success || !parsed.data.data) {
-            // 200 response does not match contract schema → do NOT modify URL, do NOT fallback
+          const rawData = (json as Record<string, unknown>)?.data as Record<string, unknown> | null | undefined;
+
+          if (!rawData || typeof rawData !== "object") {
             setState((s) => ({
               ...s,
               phase: "error_validation",
@@ -279,7 +284,27 @@ export function useSemanticSearch(onUrlUpdate: (params: URLSearchParams) => void
             return;
           }
 
-          const { filters, unrecognizedTerms, parsedQuery } = parsed.data.data;
+          const rawFilters = rawData.filters as Record<string, unknown> | null | undefined;
+          if (!rawFilters || typeof rawFilters !== "object") {
+            setState((s) => ({
+              ...s,
+              phase: "error_validation",
+              message: "智能解析响应无效",
+              parserAvailable: true,
+            }));
+            return;
+          }
+
+          // Use contract-validated data if available, otherwise extract from filters
+          const filters: SearchParseFilters = (parsed.success && parsed.data.data?.filters)
+            ? parsed.data.data.filters
+            : (rawFilters as unknown as SearchParseFilters);
+
+          const parsedQuery: string = (parsed.success && parsed.data.data?.parsedQuery)
+            || (typeof rawFilters.parsedQuery === "string" ? rawFilters.parsedQuery : "");
+
+          const unrecognizedTerms: string[] = (parsed.success && parsed.data.data?.unrecognizedTerms)
+            || (Array.isArray(rawFilters.unrecognizedTerms) ? rawFilters.unrecognizedTerms : []);
 
           // Convert AI filters to URL params
           const aiParams = filtersToUrlParams(filters);
