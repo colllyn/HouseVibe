@@ -14,6 +14,7 @@ import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { hasFeature } from "@/features/access-control/guards";
 import { createDeepSeekTextProvider } from "@/lib/ai/providers/deepseek-text-provider";
 import { DeepSeekProviderError } from "@/lib/ai/types";
+import { redactPropertyInput } from "@/lib/ai/privacy/redact-property-input";
 import type {
   DeepSeekTextProvider,
   PropertyExtractionInput,
@@ -229,10 +230,25 @@ export function createExtractPropertyHandler(
 
       const { text, sourceType } = parsed.data;
 
-      // 6. Call Provider — pass signal for client-disconnect abort
+      // 6. Server-side PII redaction — strips contacts, IDs, exact addresses, keys
+      const redaction = redactPropertyInput(text);
+      if (!redaction.safeToSend) {
+        return jsonResponse(
+          {
+            data: null,
+            error: {
+              code: "VALIDATION_FAILED",
+              message: "输入包含过多个人隐私信息，请移除后再试",
+            },
+          },
+          { status: 422, headers: h }
+        );
+      }
+
+      // 7. Call Provider with REDACTED text — never send raw PII
       const provider = getProvider();
       const providerInput: PropertyExtractionInput = {
-        text,
+        text: redaction.redactedText,
         sourceType,
         userId: user.id,
         workspaceId: member.workspace_id,
@@ -246,7 +262,7 @@ export function createExtractPropertyHandler(
         request.signal
       );
 
-      // 7. Success — strip usage, return extraction
+      // 8. Success — strip usage, return extraction
       return jsonResponse(
         { data: { extraction: sanitizeResult(result) }, error: null },
         { status: 200, headers: h }

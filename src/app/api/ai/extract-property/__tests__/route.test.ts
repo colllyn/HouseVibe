@@ -188,7 +188,7 @@ describe("POST /api/ai/extract-property", () => {
   it("1: unauthenticated → 401", async () => {
     setupNoAuth();
     const handler = createHandler();
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(401);
     const body = await getResponseBody(res);
     expect(body.error).toBeDefined();
@@ -200,7 +200,7 @@ describe("POST /api/ai/extract-property", () => {
   it("2: no workspace membership → 403", async () => {
     setupNoWorkspace();
     const handler = createHandler();
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(403);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -211,7 +211,7 @@ describe("POST /api/ai/extract-property", () => {
   it("3: no ai_data_extraction entitlement → 403", async () => {
     setEntitlement(false);
     const handler = createHandler();
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(403);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -222,7 +222,7 @@ describe("POST /api/ai/extract-property", () => {
   it("4: semantic_search does NOT substitute → 403", async () => {
     setEntitlement(false);
     const handler = createHandler();
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(403);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -232,7 +232,7 @@ describe("POST /api/ai/extract-property", () => {
   // 5. Non-JSON Content-Type → 422
   it("5: non-JSON content type → 422", async () => {
     const handler = createHandler();
-    const res = await handler(makeRequest({ text: "test" }, "text/plain"));
+    const res = await handler(makeRequest({ text: "天河区一房" }, "text/plain"));
     expect(res.status).toBe(422);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -331,7 +331,7 @@ describe("POST /api/ai/extract-property", () => {
       },
     });
     const handler = createHandler(provider);
-    await handler(makeRequest({ text: "test" }));
+    await handler(makeRequest({ text: "天河区一房" }));
     expect(callCount).toBe(1);
   });
 
@@ -346,7 +346,7 @@ describe("POST /api/ai/extract-property", () => {
     });
     const handler = createHandler(provider);
     const ac = new AbortController();
-    await handler(makeRequest({ text: "test" }, "application/json", ac.signal));
+    await handler(makeRequest({ text: "天河区一房" }, "application/json", ac.signal));
     expect(capturedSignal).toBeDefined();
   });
 
@@ -360,21 +360,21 @@ describe("POST /api/ai/extract-property", () => {
       },
     });
     const handler = createHandler(provider);
-    await handler(makeRequest({ text: "test" }));
+    await handler(makeRequest({ text: "天河区一房" }));
     expect(capturedInput).not.toBeNull();
     const input = capturedInput!;
     // Server-resolved, not from client
     expect(input.userId).toBe("user-1");
     expect(input.workspaceId).toBe("ws-1");
-    // Only text + sourceType from client
-    expect(input.text).toBe("test");
+    // Only text + sourceType from client (text is redacted but property-only)
+    expect(input.text).toBe("天河区一房");
     expect(input.sourceType).toBe("text");
   });
 
   // 15. Success envelope shape
   it("15: success envelope has { data: { extraction }, error: null }", async () => {
     const handler = createHandler();
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(200);
     const body = await getResponseBody(res);
     expect(body).toHaveProperty("data");
@@ -404,7 +404,7 @@ describe("POST /api/ai/extract-property", () => {
       },
     });
     const handler = createHandler(provider);
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(503);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -425,7 +425,7 @@ describe("POST /api/ai/extract-property", () => {
       },
     });
     const handler = createHandler(provider);
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(504);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -446,7 +446,7 @@ describe("POST /api/ai/extract-property", () => {
       },
     });
     const handler = createHandler(provider);
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(502);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -467,7 +467,7 @@ describe("POST /api/ai/extract-property", () => {
       },
     });
     const handler = createHandler(provider);
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(502);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -488,7 +488,7 @@ describe("POST /api/ai/extract-property", () => {
       },
     });
     const handler = createHandler(provider);
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(502);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -503,7 +503,7 @@ describe("POST /api/ai/extract-property", () => {
       },
     });
     const handler = createHandler(provider);
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(500);
     const body = await getResponseBody(res);
     const err = body.error as Record<string, unknown>;
@@ -526,7 +526,7 @@ describe("POST /api/ai/extract-property", () => {
     });
     const handler = createHandler(provider);
     try {
-      await handler(makeRequest({ text: "test" }));
+      await handler(makeRequest({ text: "天河区一房" }));
       expect.unreachable("Should have thrown");
     } catch (err) {
       expect(err).toBeInstanceOf(DeepSeekProviderError);
@@ -569,15 +569,103 @@ describe("POST /api/ai/extract-property", () => {
     // Static verification: the handler has no .insert/.update/.upsert calls
     // Verified by test passing without any DB mock for writes
     const handler = createHandler();
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(200);
   });
 
   // 25. No Service Role used
   it("25: no service role key in route", async () => {
     const handler = createHandler();
-    const res = await handler(makeRequest({ text: "test" }));
+    const res = await handler(makeRequest({ text: "天河区一房" }));
     expect(res.status).toBe(200);
     // If service role was required, the mock client (anon key) would fail
+  });
+
+  // --- PII Redaction Integration ---
+
+  it("26: provider receives redacted text, not raw PII", async () => {
+    let capturedText: string | null = null;
+    const provider = makeMockProvider({
+      extractProperty: async (input) => {
+        capturedText = input.text;
+        return DEFAULT_RESULT;
+      },
+    });
+    const handler = createHandler(provider);
+    await handler(
+      makeRequest({
+        text: "天河区一房3500元，房东：张三，电话13812345678",
+      })
+    );
+    expect(capturedText).not.toBeNull();
+    expect(capturedText!).not.toContain("13812345678");
+    expect(capturedText!).not.toContain("张三");
+    expect(capturedText!).toContain("[REDACTED_PHONE]");
+    expect(capturedText!).toContain("[REDACTED_NAME]");
+    // Property facts preserved
+    expect(capturedText!).toContain("3500");
+  });
+
+  it("27: provider never receives raw PII from input", async () => {
+    let capturedText: string | null = null;
+    const provider = makeMockProvider({
+      extractProperty: async (input) => {
+        capturedText = input.text;
+        return DEFAULT_RESULT;
+      },
+    });
+    const handler = createHandler(provider);
+    const rawText =
+      "微信：owner123 邮箱：owner@mail.com 身份证：440106199001011234";
+    await handler(makeRequest({ text: rawText }));
+    expect(capturedText!).not.toContain("owner123");
+    expect(capturedText!).not.toContain("owner@mail.com");
+    expect(capturedText!).not.toContain("440106199001011234");
+  });
+
+  it("28: high-risk input (mostly PII) → 422, Provider call count = 0", async () => {
+    let callCount = 0;
+    const provider = makeMockProvider({
+      extractProperty: async () => {
+        callCount++;
+        return DEFAULT_RESULT;
+      },
+    });
+    const handler = createHandler(provider);
+    // Pure PII with no property context — stripped text < 5 chars after redaction
+    const res = await handler(
+      makeRequest({
+        text: "13812345678 440106199001011234",
+      })
+    );
+    expect(res.status).toBe(422);
+    expect(callCount).toBe(0);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("29: error logs/snapshots contain no raw PII", async () => {
+    const provider = makeMockProvider({
+      extractProperty: async () => {
+        throw new DeepSeekProviderError({
+          code: "AI_UPSTREAM_ERROR",
+          message: "service error",
+          requestId: "req-1",
+          retryable: true,
+          suggestedHttpStatus: 502,
+        });
+      },
+    });
+    const handler = createHandler(provider);
+    const res = await handler(
+      makeRequest({
+        text: "天河区，房东电话13800000001，身份证440106199001011234",
+      })
+    );
+    const body = await getResponseBody(res);
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("13800000001");
+    expect(serialized).not.toContain("440106199001011234");
   });
 });

@@ -436,6 +436,11 @@ Ask `quality-reviewer` to perform a final read-only review of:
 - All tests use Mock Provider (no real DeepSeek calls)
 - request.signal forwarded on both routes
 - No shared or duplicated prompt/retry logic between routes
+- extract-property route performs server-side PII redaction before Provider call
+- Original text must not be sent directly to Provider for extraction
+- redactPropertyInput() is deterministic regex-based (no AI model involvement)
+- Tests prove Provider never receives raw PII (phone, email, ID, address, key location)
+- High-risk input (mostly PII after stripping) returns 422 with Provider call count = 0
 
 ---
 
