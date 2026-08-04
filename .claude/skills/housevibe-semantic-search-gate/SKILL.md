@@ -192,10 +192,19 @@ Verify each status code behavior:
 - Fallback only generates a single `search` chip with the raw query text
 - Structured chips are only generated from parser 200 responses (Phase 3)
 - Multiple districts are fully preserved in URL (repeated params or comma-separated)
+- Multiple communities are fully preserved in URL (repeated `community` params)
+- Multiple features are fully preserved in URL (repeated `feature` params)
 - Each district generates an independent chip
+- Each community generates an independent chip
+- Each feature generates an independent chip
+- `communities` must not be silently dropped — bidirectional mapping via `FILTER_TO_URL_PARAM`
+- `features` must not be silently dropped — bidirectional mapping via `FILTER_TO_URL_PARAM`
+- Deleting one array-value chip (community/feature/district) removes only that value
 - Deleting one chip does not delete chips for other fields
+- Deleting one value of an array param does not delete the entire array
 - Browser back/forward restores previous filter state
-- Page refresh restores filter state from URL
+- Page refresh restores filter state from URL (including array param recovery)
+- E2E must cover refresh recovery for communities and features
 - Illegal parser responses do NOT modify URL
 - Chip removal returns focus to search input
 
@@ -272,14 +281,15 @@ Confirm actual executable coverage for:
 - Illegal response does not pollute URL
 
 ### E2E
-- 26 business scenarios in `e2e/semantic-search-ui.spec.ts` (plus 3 shared setup = 29 Playwright total)
-- Setup tests (3) and business tests (26) MUST be distinguished in gate output
+- 31 business scenarios in `e2e/semantic-search-ui.spec.ts` (plus 3 shared setup = 34 Playwright total)
+- Setup tests (3) and business tests (31) MUST be distinguished in gate output
 - No skipped tests in semantic search E2E
-- E2E covers: all 9 fallback matrix statuses including illegal HTTP 200, multi-district, chip removal, touch targets on all interactive elements, accessible names on all controls
+- E2E covers: all 9 fallback matrix statuses including illegal HTTP 200, multi-district, multi-community, multi-feature, chip removal for array fields, touch targets on all interactive elements, accessible names on all controls, refresh recovery for array params
 - Arithmetic total errors (confusing setup tests with business scenarios) MUST cause FAIL
 
 ### Unit Tests
 - 28 Zod schema unit tests in `src/features/properties/__tests__/semantic-search-schemas.test.ts`
+- 26 filter mapping unit tests in `src/features/properties/__tests__/semantic-search-filter-mapping.test.ts`
 
 ## Reviewer
 
@@ -293,6 +303,7 @@ Ask `quality-reviewer` to perform a final read-only review of:
 6. Schemas (`src/features/properties/schemas.ts` — semantic search section)
 7. E2E tests (`e2e/semantic-search-ui.spec.ts`)
 8. Unit tests (`src/features/properties/__tests__/semantic-search-schemas.test.ts`)
+9. Filter mapping tests (`src/features/properties/__tests__/semantic-search-filter-mapping.test.ts`)
 
 `data-security-engineer` must independently confirm:
 - 401/403/422 do NOT trigger fallback

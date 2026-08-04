@@ -40,6 +40,10 @@ const FILTER_TO_URL_PARAM: Record<string, { param: string; transform: (v: unknow
     param: "district",
     transform: (v) => (Array.isArray(v) && v.length > 0 ? String(v[0]) : ""),
   },
+  communities: {
+    param: "community",
+    transform: (v) => (Array.isArray(v) && v.length > 0 ? String(v[0]) : ""),
+  },
   monthlyRentMax: { param: "maxRent", transform: (v) => String(Number(v)) },
   monthlyRentMin: { param: "minRent", transform: (v) => String(Number(v)) },
   bedrooms: { param: "bedrooms", transform: (v) => String(Number(v)) },
@@ -49,6 +53,10 @@ const FILTER_TO_URL_PARAM: Record<string, { param: string; transform: (v: unknow
   hasElevator: { param: "hasElevator", transform: (v) => (v ? "true" : "false") },
   availableBefore: { param: "availableBefore", transform: (v) => String(v) },
   communityName: { param: "communityName", transform: (v) => String(v) },
+  features: {
+    param: "feature",
+    transform: (v) => (Array.isArray(v) && v.length > 0 ? String(v[0]) : ""),
+  },
   subwayText: { param: "subwayText", transform: (v) => String(v) },
   sortBy: { param: "sortBy", transform: (v) => String(v) },
   sortOrder: { param: "sortOrder", transform: (v) => String(v) },
@@ -56,6 +64,7 @@ const FILTER_TO_URL_PARAM: Record<string, { param: string; transform: (v: unknow
 
 const CHIP_LABELS: Record<string, string> = {
   district: "区域",
+  community: "小区",
   maxRent: "最高租金",
   minRent: "最低租金",
   bedrooms: "户型",
@@ -65,6 +74,7 @@ const CHIP_LABELS: Record<string, string> = {
   hasElevator: "有电梯",
   availableBefore: "入住时间",
   communityName: "小区",
+  feature: "特色",
   subwayText: "地铁",
   sortBy: "排序",
   sortOrder: "排序方向",
@@ -80,17 +90,26 @@ function formatChipValue(key: string, value: string): string {
   return value;
 }
 
-function filtersToUrlParams(filters: SearchParseFilters): URLSearchParams {
+/** Arrays that use repeated URL params (one per element). */
+export const ARRAY_FILTER_FIELDS = ["districts", "communities", "features"] as const;
+
+export function filtersToUrlParams(filters: SearchParseFilters): URLSearchParams {
   const params = new URLSearchParams();
-  // Handle districts array specially: each value gets its own repeated param
-  if (filters.districts && filters.districts.length > 0) {
-    for (const district of filters.districts) {
-      params.append("district", district);
+  // Handle array fields: each value gets its own repeated param
+  for (const field of ARRAY_FILTER_FIELDS) {
+    const arr = (filters as Record<string, unknown>)[field];
+    if (Array.isArray(arr) && arr.length > 0) {
+      const mapping = FILTER_TO_URL_PARAM[field];
+      if (!mapping) continue;
+      const deduped = [...new Set(arr.map((v) => String(v).trim()).filter(Boolean))].sort();
+      for (const val of deduped) {
+        params.append(mapping.param, val);
+      }
     }
   }
   // Handle remaining fields via mapping table
   for (const [aiField, mapping] of Object.entries(FILTER_TO_URL_PARAM)) {
-    if (aiField === "districts") continue; // handled above
+    if ((ARRAY_FILTER_FIELDS as readonly string[]).includes(aiField)) continue; // handled above
     const val = (filters as Record<string, unknown>)[aiField];
     if (val !== undefined && val !== null) {
       const strVal = mapping.transform(val);
@@ -100,21 +119,28 @@ function filtersToUrlParams(filters: SearchParseFilters): URLSearchParams {
   return params;
 }
 
-function filtersToChips(filters: SearchParseFilters): SearchChip[] {
+export function filtersToChips(filters: SearchParseFilters): SearchChip[] {
   const chips: SearchChip[] = [];
-  // Handle districts array: one chip per district value
-  if (filters.districts && filters.districts.length > 0) {
-    for (const district of filters.districts) {
-      chips.push({
-        key: `district-${district}`,
-        label: CHIP_LABELS["district"] ?? "区域",
-        value: formatChipValue("district", district),
-      });
+  // Handle array fields: one chip per value
+  for (const field of ARRAY_FILTER_FIELDS) {
+    const arr = (filters as Record<string, unknown>)[field];
+    if (Array.isArray(arr) && arr.length > 0) {
+      const mapping = FILTER_TO_URL_PARAM[field];
+      if (!mapping) continue;
+      const param = mapping.param;
+      const deduped = [...new Set(arr.map((v) => String(v).trim()).filter(Boolean))].sort();
+      for (const val of deduped) {
+        chips.push({
+          key: `${param}-${val}`,
+          label: CHIP_LABELS[param] ?? param,
+          value: formatChipValue(param, val),
+        });
+      }
     }
   }
   // Handle remaining fields via mapping table
   for (const [aiField, mapping] of Object.entries(FILTER_TO_URL_PARAM)) {
-    if (aiField === "districts") continue; // handled above
+    if ((ARRAY_FILTER_FIELDS as readonly string[]).includes(aiField)) continue; // handled above
     const val = (filters as Record<string, unknown>)[aiField];
     if (val !== undefined && val !== null) {
       const strVal = mapping.transform(val);

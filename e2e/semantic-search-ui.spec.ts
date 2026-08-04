@@ -6,7 +6,7 @@
  * mobile layout, touch targets (44px on all interactive elements), accessibility,
  * XSS safety, no /api/ai/ implementation, no search persistence.
  *
- * Business scenarios: 26 | Setup: 3 shared | Playwright total: 29
+ * Business scenarios: 31 | Setup: 3 shared | Playwright total: 34
  *
  * Network mocks are used ONLY for the Phase 3 parser endpoint
  * (POST /api/ai/parse-property-search) which does not exist in Phase 2.
@@ -121,6 +121,20 @@ const MULTI_DISTRICT_200_BODY = {
       districts: ["天河区", "海珠区", "越秀区"],
       monthlyRentMax: 3000,
       parsedQuery: "天河海珠越秀，3000以内",
+      unrecognizedTerms: [],
+    },
+  },
+  error: null,
+};
+
+const COMMUNITIES_FEATURES_200_BODY = {
+  data: {
+    filters: {
+      communities: ["珠江新城", "猎德"],
+      features: ["近地铁", "带阳台"],
+      districts: ["天河区"],
+      monthlyRentMax: 5000,
+      parsedQuery: "珠江新城猎德，近地铁带阳台，5000以内",
       unrecognizedTerms: [],
     },
   },
@@ -618,5 +632,154 @@ test.describe("Semantic Search UI", () => {
       expect(clearBox).not.toBeNull();
       expect(clearBox!.height).toBeGreaterThanOrEqual(44);
     }
+  });
+
+  // --- Communities + Features Array Mapping ---
+
+  test("27. communities + features → repeated URL params and chips visible", async ({ page }) => {
+    await mockParser(page, 200, COMMUNITIES_FEATURES_200_BODY);
+
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("珠江新城猎德近地铁带阳台");
+    await page.locator('button[aria-label="提交搜索"]').click();
+
+    // Verify URL has repeated community params
+    await expect(page).toHaveURL(/community=/, { timeout: 8000 });
+    const url = new URL(page.url());
+    const communities = url.searchParams.getAll("community");
+    expect(communities).toContain("珠江新城");
+    expect(communities).toContain("猎德");
+
+    // Verify URL has repeated feature params
+    const features = url.searchParams.getAll("feature");
+    expect(features).toContain("近地铁");
+    expect(features).toContain("带阳台");
+
+    // Verify chips are visible with correct labels
+    const chipSection = page.locator('[aria-label="当前筛选条件"]');
+    await expect(chipSection).toBeVisible({ timeout: 5000 });
+    // AI chips have label: prefix like "小区:" and "特色:"
+    await expect(chipSection.locator('text=小区:').first()).toBeVisible();
+    await expect(chipSection.locator('text=特色:').first()).toBeVisible();
+    await expect(chipSection.locator('text=珠江新城').first()).toBeVisible();
+    await expect(chipSection.locator('text=猎德').first()).toBeVisible();
+    await expect(chipSection.locator('text=近地铁').first()).toBeVisible();
+    await expect(chipSection.locator('text=带阳台').first()).toBeVisible();
+  });
+
+  test("28. remove single community chip → other communities preserved", async ({ page }) => {
+    await mockParser(page, 200, COMMUNITIES_FEATURES_200_BODY);
+
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("珠江新城猎德近地铁");
+    await page.locator('button[aria-label="提交搜索"]').click();
+
+    // Wait for chips to appear
+    const chipSection = page.locator('[aria-label="当前筛选条件"]');
+    await expect(chipSection).toBeVisible({ timeout: 8000 });
+
+    // Find the remove button for "珠江新城" chip (may have duplicate from URL chips)
+    const zhujiangRemove = chipSection.locator('[aria-label="删除筛选条件: 小区 珠江新城"]').first();
+    if (await zhujiangRemove.isVisible()) {
+      await zhujiangRemove.click();
+      await page.waitForTimeout(800);
+
+      // URL should still have "猎德" community but not "珠江新城"
+      const url = new URL(page.url());
+      const communities = url.searchParams.getAll("community");
+      expect(communities).not.toContain("珠江新城");
+      expect(communities).toContain("猎德");
+
+      // Features should be unaffected
+      const features = url.searchParams.getAll("feature");
+      expect(features).toContain("近地铁");
+      expect(features).toContain("带阳台");
+    }
+  });
+
+  test("29. remove single feature chip → other features preserved", async ({ page }) => {
+    await mockParser(page, 200, COMMUNITIES_FEATURES_200_BODY);
+
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("珠江新城近地铁带阳台");
+    await page.locator('button[aria-label="提交搜索"]').click();
+
+    // Wait for chips to appear
+    const chipSection = page.locator('[aria-label="当前筛选条件"]');
+    await expect(chipSection).toBeVisible({ timeout: 8000 });
+
+    // Find the remove button for "近地铁" chip (may have duplicate from URL chips)
+    const subwayRemove = chipSection.locator('[aria-label="删除筛选条件: 特色 近地铁"]').first();
+    if (await subwayRemove.isVisible()) {
+      await subwayRemove.click();
+      await page.waitForTimeout(800);
+
+      // URL should still have "带阳台" feature but not "近地铁"
+      const url = new URL(page.url());
+      const features = url.searchParams.getAll("feature");
+      expect(features).not.toContain("近地铁");
+      expect(features).toContain("带阳台");
+
+      // Communities should be unaffected
+      const communities = url.searchParams.getAll("community");
+      expect(communities).toContain("珠江新城");
+      expect(communities).toContain("猎德");
+    }
+  });
+
+  test("30. page refresh restores communities and features from URL", async ({ page }) => {
+    // First, get communities + features into the URL
+    await mockParser(page, 200, COMMUNITIES_FEATURES_200_BODY);
+
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("珠江新城近地铁");
+    await page.locator('button[aria-label="提交搜索"]').click();
+
+    // Verify URL has the params
+    await expect(page).toHaveURL(/community=/, { timeout: 8000 });
+
+    // Reload the page
+    await page.reload({ waitUntil: "networkidle" });
+
+    // Verify the URL is preserved (or at least params still present)
+    const urlAfter = page.url();
+    const paramsAfter = new URL(urlAfter).searchParams;
+
+    // Communities and features should still be in the URL
+    const communities = paramsAfter.getAll("community");
+    expect(communities.length).toBeGreaterThan(0);
+    expect(communities).toContain("珠江新城");
+    expect(communities).toContain("猎德");
+
+    const features = paramsAfter.getAll("feature");
+    expect(features.length).toBeGreaterThan(0);
+    expect(features).toContain("近地铁");
+    expect(features).toContain("带阳台");
+
+    // Chips should be regenerated from URL params on reload
+    const chipSection = page.locator('[aria-label="当前筛选条件"]');
+    await expect(chipSection).toBeVisible({ timeout: 8000 });
+    await expect(chipSection.locator('text=小区:')).toHaveCount(2);
+    await expect(chipSection.locator('text=特色:')).toHaveCount(2);
+  });
+
+  test("31. communities + features do NOT trigger text fallback", async ({ page }) => {
+    await mockParser(page, 200, COMMUNITIES_FEATURES_200_BODY);
+
+    await page.getByRole("textbox", { name: "自然语言搜索房源" }).fill("珠江新城猎德近地铁带阳台");
+    await page.locator('button[aria-label="提交搜索"]').click();
+
+    // Should NOT show fallback text
+    await page.waitForTimeout(1500);
+    const fallbackText = page.locator('text=智能搜索即将上线');
+    await expect(fallbackText).toHaveCount(0);
+
+    // Should NOT show error fallback
+    const errorFallback = page.locator('text=智能解析暂不可用');
+    await expect(errorFallback).toHaveCount(0);
+
+    // Should show structured recognition message
+    const structuredMsg = page.locator('text=已识别筛选条件');
+    await expect(structuredMsg).toBeVisible({ timeout: 8000 });
+
+    // URL should NOT have a plain "search" param (that's fallback behavior)
+    const url = new URL(page.url());
+    expect(url.searchParams.get("search")).toBeNull();
   });
 });

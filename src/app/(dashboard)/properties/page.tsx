@@ -32,11 +32,11 @@ const SC: Record<string, string> = { draft: "bg-gray-100 text-gray-700", availab
 // Human-readable labels for URL filter chips (contract §6.1: chips must have understandable labels)
 const URL_CHIP_LABELS: Record<string, string> = {
   status: "状态", district: "区域", city: "城市", businessArea: "商圈",
-  communityName: "小区", rentalType: "租赁方式", bedrooms: "户型",
+  community: "小区", communityName: "小区", rentalType: "租赁方式", bedrooms: "户型",
   minRent: "最低租金", maxRent: "最高租金", minArea: "最小面积", maxArea: "最大面积",
   petsAllowed: "可养宠物", cookingAllowed: "可做饭", hasElevator: "有电梯",
   availableBefore: "入住前", availableAfter: "入住后", isShared: "共享",
-  subwayText: "地铁", search: "搜索",
+  feature: "特色", subwayText: "地铁", search: "搜索",
 };
 function formatUrlChipValue(key: string, value: string): string {
   if (key === "petsAllowed" || key === "cookingAllowed" || key === "hasElevator") return value === "true" ? "是" : "否";
@@ -158,10 +158,28 @@ function PropertiesContent() {
       const merged = new URLSearchParams(searchParams.toString());
       // Remove old search-related params
       merged.delete("search");
-      // Apply new params from semantic search
+      // Remove old array params before reapplying (to avoid stale values)
+      merged.delete("district");
+      merged.delete("community");
+      merged.delete("feature");
+      // Collect array values per param for append; scalar params use set
+      const arrayParamNames = new Set(["district", "community", "feature"]);
+      const arrayValues = new Map<string, string[]>();
+      // Apply new params: append for array params, set for scalar
       for (const [k, v] of params.entries()) {
-        if (v) merged.set(k, v);
-        else merged.delete(k);
+        if (!v) { merged.delete(k); continue; }
+        if (arrayParamNames.has(k)) {
+          if (!arrayValues.has(k)) arrayValues.set(k, []);
+          arrayValues.get(k)!.push(v);
+        } else {
+          merged.set(k, v);
+        }
+      }
+      // Append array values after clearing
+      for (const [k, vals] of arrayValues) {
+        for (const v of vals) {
+          merged.append(k, v);
+        }
       }
       window.history.pushState(null, "", `/properties?${merged.toString()}`);
       window.dispatchEvent(new PopStateEvent("popstate"));
@@ -211,10 +229,14 @@ function PropertiesContent() {
 
   const activeFilters = React.useMemo(() => {
     const filters: { key: string; label: string; value: string }[] = [];
+    // Array param types that use repeated URL params — needs unique compound keys
+    const ARRAY_PARAMS = new Set(["district", "community", "feature"]);
     for (const [k, v] of searchParams.entries()) {
       if (["page", "limit", "sortBy", "sortOrder"].includes(k)) continue;
       const label = URL_CHIP_LABELS[k] ?? k;
-      filters.push({ key: k, label, value: formatUrlChipValue(k, v) });
+      // For array params, use compound key (param-value) for uniqueness and removal
+      const key = ARRAY_PARAMS.has(k) ? `${k}-${v}` : k;
+      filters.push({ key, label, value: formatUrlChipValue(k, v) });
     }
     return filters;
   }, [searchParams]);
@@ -307,14 +329,16 @@ function PropertiesContent() {
             : []
         }
         onRemoveUrlChip={(key) => {
-          // Multi-district: key is "district-天河区", remove only that value
-          if (key.startsWith("district-")) {
-            const districtToRemove = key.slice("district-".length);
+          // Multi-value array params: key is "param-value", e.g. "district-天河区"
+          const ARRAY_PARAM_PREFIXES = ["district", "community", "feature"];
+          const matched = ARRAY_PARAM_PREFIXES.find((p) => key.startsWith(`${p}-`));
+          if (matched) {
+            const valueToRemove = key.slice(`${matched}-`.length);
             const params = new URLSearchParams(searchParams.toString());
-            const allDistricts = params.getAll("district");
-            params.delete("district");
-            for (const d of allDistricts) {
-              if (d !== districtToRemove) params.append("district", d);
+            const allValues = params.getAll(matched);
+            params.delete(matched);
+            for (const v of allValues) {
+              if (v !== valueToRemove) params.append(matched, v);
             }
             params.set("page", "1");
             window.history.pushState(null, "", `/properties?${params.toString()}`);
