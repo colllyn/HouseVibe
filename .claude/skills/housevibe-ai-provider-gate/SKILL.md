@@ -37,10 +37,12 @@ This gate is sourced from the following frozen contracts:
 
 This gate verifies the DeepSeek Text Provider implementation under `src/lib/ai/`. It does NOT verify:
 
-- `/api/ai/` Route Handlers (P3-AI-004)
+- `/api/ai/` Route Handlers (P3-AI-004) — routes may exist; this gate only checks that `src/lib/ai/` has no HTTP handler dependencies
 - Vision Provider (P3-AI-005)
 - Real DeepSeek API smoke tests (deferred)
 - Database or UI code
+
+**Post-P3-AI-004**: The "no AI Route" rule is refined. `src/app/api/ai/` routes are legitimate deliverables of P3-AI-004. This gate verifies only that the Provider code under `src/lib/ai/providers/` remains self-contained — it must not import from route handler modules, contain `NextRequest`/`NextResponse` references, or embed HTTP handler logic. The route handler itself must delegate to the Provider through clean interfaces.
 
 ## Gate Checks
 
@@ -186,13 +188,19 @@ fi
 
 AI_ROUTE_FILES=$(find src/app/api/ai -type f 2>/dev/null || true)
 if [ -n "$AI_ROUTE_FILES" ]; then
-  echo "CHECK_12B_FAIL: AI routes found: $AI_ROUTE_FILES"
+  echo "CHECK_12B_INFO: AI routes found (legitimate post-P3-AI-004): $AI_ROUTE_FILES"
+  # Routes may exist; verify Provider code has no HTTP handler imports
+  if grep -RniE "NextRequest|NextResponse|route-handler" src/lib/ai/providers/ 2>/dev/null; then
+    echo "CHECK_12B_FAIL: Provider code has route handler dependencies"
+  else
+    echo "CHECK_12B_PASS: Provider code is independent of route handlers"
+  fi
 else
-  echo "CHECK_12B_PASS: no AI routes"
+  echo "CHECK_12B_PASS: no AI routes (pre-P3-AI-004 state)"
 fi
 ```
 
-**Requirement**: No `*.smoke.test.ts` files. No `/api/ai/` route handlers.
+**Requirement**: No `*.smoke.test.ts` files. Provider code under `src/lib/ai/providers/` must be independent of HTTP route handler modules — no `NextRequest`, `NextResponse`, or `route-handler` imports.
 
 ### 13. No Skipped Tests
 
@@ -249,7 +257,7 @@ ALL of the following must be true:
 8. No `P0` or `P1` findings from quality reviewer
 9. `PropertySearchFilterSchema` uses Zod `.strict()`
 10. No real DeepSeek API calls in tests
-11. No `/api/ai/` routes exist
+11. Provider code under `src/lib/ai/providers/` has no HTTP handler dependencies
 12. No smoke test files exist
 13. No skipped/todo tests in `src/lib/ai/`
 14. No `SUPABASE_SERVICE_ROLE_KEY` in AI code
