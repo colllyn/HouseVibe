@@ -497,7 +497,7 @@ describe("POST /api/ai/parse-property-search", () => {
   });
 
   // 22. Abort does not produce secondary response
-  it("22: AI_REQUEST_ABORTED — no envelope, no JSON body, no provider retry", async () => {
+  it("22: AI_REQUEST_ABORTED — handler rejects, no Response envelope, no 499", async () => {
     let callCount = 0;
     const provider = makeMockProvider({
       parsePropertySearch: async () => {
@@ -512,15 +512,40 @@ describe("POST /api/ai/parse-property-search", () => {
     });
 
     const handler = createHandler(provider);
-    // Aborted request — handler must not throw and must not produce a JSON envelope
-    const res = await handler(makeRequest({ query: "test" }));
-    expect(res).toBeDefined();
+    // Aborted request — handler must rethrow, not return a Response
+    try {
+      await handler(makeRequest({ query: "test" }));
+      expect.unreachable("Should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DeepSeekProviderError);
+      const e = err as DeepSeekProviderError;
+      expect(e.code).toBe("AI_REQUEST_ABORTED");
+    }
 
-    // No { data, error } envelope on abort
-    const text = await res.text();
-    expect(text).toBe("");
-
-    // No second provider call
+    // Provider called exactly once (no retry)
     expect(callCount).toBe(1);
+  });
+
+  // 23. Whitespace-only query → 422
+  it("23: whitespace-only query → 422", async () => {
+    const handler = createHandler();
+    const res = await handler(makeRequest({ query: "   " }));
+    expect(res.status).toBe(422);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("VALIDATION_FAILED");
+  });
+
+  // 24. VALIDATION_FAILED envelope is correct
+  it("24: VALIDATION_FAILED envelope has correct shape", async () => {
+    const handler = createHandler();
+    const res = await handler(makeRequest({ query: "" }));
+    expect(res.status).toBe(422);
+    const body = await getResponseBody(res);
+    expect(body.data).toBeNull();
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("VALIDATION_FAILED");
+    expect(typeof err.message).toBe("string");
+    expect((err.message as string).length).toBeGreaterThan(0);
   });
 });

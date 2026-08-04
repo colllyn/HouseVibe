@@ -76,11 +76,9 @@ function mapProviderError(
         },
       };
     case "AI_REQUEST_ABORTED":
-      // Handled before mapProviderError is called; this case satisfies exhaustiveness
-      return {
-        status: 499,
-        body: { code: "AI_REQUEST_ABORTED", message: "" },
-      };
+      // Unreachable: handled before mapProviderError is called.
+      // If reached, rethrow so the runtime handles the aborted connection.
+      throw err;
   }
 }
 
@@ -232,10 +230,11 @@ export function createParsePropertySearchHandler(
       );
     } catch (err) {
       if (err instanceof DeepSeekProviderError) {
-        // AI_REQUEST_ABORTED: connection already closed, do NOT send a new response.
-        // End processing immediately without writing any envelope.
+        // AI_REQUEST_ABORTED: connection already closed by client.
+        // Rethrow so Next.js / the runtime can abort response streaming.
+        // Do NOT return a Response, do NOT log query/prompt/raw response.
         if (err.code === "AI_REQUEST_ABORTED") {
-          return new Response(null, { status: 499 });
+          throw err;
         }
 
         const mapped = mapProviderError(err);
