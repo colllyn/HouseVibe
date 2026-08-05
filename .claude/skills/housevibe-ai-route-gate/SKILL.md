@@ -42,6 +42,7 @@ This gate verifies every AI API route under `src/app/api/ai/**/route.ts`. Curren
 - `POST /api/ai/parse-property-search` — P3-AI-004 (semantic_search entitlement)
 - `POST /api/ai/extract-property` — P3-AI-083 (ai_data_extraction entitlement)
 - `POST /api/ai/extract-client` — P3-AI-086 (ai_data_extraction entitlement)
+- `POST /api/ai/generate-content` — P3-AI-089 (content_factory entitlement)
 
 Each route uses its own precise entitlement, narrow DTO, and no shared prompt/retry logic.
 Future AI routes (e.g., P3-AI-005 Vision) must be added to this gate when implemented.
@@ -455,6 +456,13 @@ Ask `quality-reviewer` to perform a final read-only review of:
 - `requestId` is server-generated via `crypto.randomUUID()`
 - TypeScript contract (`types.ts`) and API contract (`api-contract.md §10.3`) are consistent
 - AI contract (`ai-contract.md §2.2`) matches the narrow wire DTO
+- generate-content route checks content_factory entitlement (not ai_data_extraction or semantic_search)
+- generate-content request schema is strict; accepts only safe property facts (no propertyId, no DB loading)
+- generate-content redacts PII from property description before Provider call
+- generate-content Provider DTO is narrow — no userId, workspaceId, propertyId, clientId
+- generate-content response excludes model, tokens, usage, requestId, upstreamStatus
+- generate-content output preserves contract types: factualSummary, requiresFactReview, factsUsed, riskFlags, complianceFlags
+- generate-content performs no database writes
 
 ---
 
@@ -500,6 +508,12 @@ ALL of the following must be true:
 36. No `as`-cast or type assertion on Provider DTO construction
 37. Public request rejects client-submitted requestId (strict schema)
 38. TypeScript types, AI contract, and API contract are mutually consistent
+39. generate-content route uses content_factory entitlement with CONTENT_FACTORY_NOT_ALLOWED error code
+40. generate-content request schema is strict, accepts only safe property facts
+41. generate-content Provider DTO excludes identity/workspace fields
+42. generate-content response excludes model metadata (no model, tokens, usage, requestId)
+43. generate-content output preserves contract types (factualSummary, requiresFactReview boolean, array types)
+44. generate-content performs no database writes
 
 Any of the following MUST cause FAIL:
 
