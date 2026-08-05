@@ -763,3 +763,116 @@ describe("Quota Lifecycle — Regression", () => {
     expect(reserveCall).toBeUndefined();
   });
 });
+
+// ============================================================
+// Tests: Concurrency
+// ============================================================
+
+describe("Quota Lifecycle — Concurrency", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    rpcCallLog.length = 0;
+    setupAuth();
+    setupProperty();
+    mockHasFeature.mockResolvedValue(true);
+  });
+
+  it("quota-20: concurrent requests with different keys — only one passes when limit=1", async () => {
+    let reserveCallCount = 0;
+    let providerCallCount = 0;
+
+    mockRpc.mockImplementation((name: string, _p: Record<string, unknown>) => {
+      if (name === "reserve_ai_quota") {
+        reserveCallCount++;
+        if (reserveCallCount === 1) {
+          return makeReserveSuccess("res-concurrent-001");
+        }
+        return {
+          data: {
+            success: false,
+            limit_reason: "request_limit",
+            remaining_requests: 0,
+            daily_limit: 1,
+            used_requests: 1,
+            used_cost_usd: 0,
+            remaining_cost_usd: 10,
+            daily_cost_limit_usd: 10,
+            quota_date: "2026-08-05",
+          },
+          error: null,
+        };
+      }
+      if (name === "settle_ai_quota") return makeSettleSuccess();
+      if (name === "release_ai_quota") return makeReleaseSuccess();
+      return { data: null, error: { message: "unknown" } };
+    });
+
+    const provider = makeProvider(async () => {
+      providerCallCount++;
+      return DEFAULT_RESULT;
+    });
+    const handler = createHandler(provider);
+
+    const [res1, res2] = await Promise.all([
+      handler(makeRequest(validBody({ idempotencyKey: "concurrent-key-a" }))),
+      handler(makeRequest(validBody({ idempotencyKey: "concurrent-key-b" }))),
+    ]);
+
+    const statuses = [res1.status, res2.status].sort();
+    // One succeeds (200), one is rate-limited (429)
+    expect(statuses).toEqual([200, 429]);
+
+    // Provider called exactly once (only for the successful request)
+    expect(providerCallCount).toBe(1);
+
+    // Reserve called twice (once per request)
+    expect(reserveCallCount).toBe(2);
+  });
+
+  it("quota-21: same idempotencyKey concurrent requests — provider called at most once", async () => {
+    let reserveCallCount = 0;
+    let providerCallCount = 0;
+
+    mockRpc.mockImplementation((name: string, _p: Record<string, unknown>) => {
+      if (name === "reserve_ai_quota") {
+        reserveCallCount++;
+        if (reserveCallCount === 1) {
+          return makeReserveSuccess("res-same-key-001");
+        }
+        // Second call: idempotency guard returns already_reserved
+        return {
+          data: {
+            success: true,
+            already_reserved: true,
+            reservation_id: "res-same-key-001",
+            status: "reserved",
+            limit_reason: null,
+          },
+          error: null,
+        };
+      }
+      if (name === "settle_ai_quota") return makeSettleSuccess();
+      if (name === "release_ai_quota") return makeReleaseSuccess();
+      return { data: null, error: { message: "unknown" } };
+    });
+
+    const provider = makeProvider(async () => {
+      providerCallCount++;
+      return DEFAULT_RESULT;
+    });
+    const handler = createHandler(provider);
+
+    const [res1, res2] = await Promise.all([
+      handler(makeRequest(validBody({ idempotencyKey: "concurrent-same-key" }))),
+      handler(makeRequest(validBody({ idempotencyKey: "concurrent-same-key" }))),
+    ]);
+
+    // One succeeds (200 with content), the other gets 409 (already reserved)
+    const statuses = [res1.status, res2.status].sort();
+    expect(statuses).toContain(200);
+    expect(statuses).toContain(409);
+
+    // CRITICAL: Provider called at most once — duplicate key must not trigger duplicate generation
+    expect(providerCallCount).toBeLessThanOrEqual(1);
+  });
+});

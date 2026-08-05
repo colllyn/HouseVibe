@@ -1,4 +1,4 @@
--- AI Quota RPC Atomicity Tests
+-- AI Quota RPC Atomicity Tests (20 tests)
 BEGIN;
 SET LOCAL search_path TO public, extensions;
 
@@ -21,32 +21,50 @@ INSERT INTO public.workspace_members (id, workspace_id, user_id, role, status) V
   ('cccccccc-1111-4000-8000-000000000001', 'bbbbbbbb-1111-4000-8000-000000000001', 'aaaaaaaa-1111-4000-8000-000000000001', 'owner', 'active'),
   ('cccccccc-1111-4000-8000-000000000002', 'bbbbbbbb-1111-4000-8000-000000000002', 'aaaaaaaa-1111-4000-8000-000000000002', 'owner', 'active');
 
-SELECT plan(18);
+SELECT plan(20);
 SET LOCAL ROLE authenticated;
 SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-1111-4000-8000-000000000001"}';
 
+-- 1: reserve succeeds
 SELECT is((public.reserve_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_feature:='content_factory',p_request_limit:=10,p_daily_cost_limit_usd:=10.0,p_reserved_estimated_cost_usd:=0.01,p_idempotency_key:='idem-001',p_request_id:='req-001')->>'success')::boolean, true, '1: reserve succeeds');
+-- 3: same idempotency_key already_reserved
 SELECT is((public.reserve_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_feature:='content_factory',p_request_limit:=10,p_daily_cost_limit_usd:=10.0,p_reserved_estimated_cost_usd:=0.01,p_idempotency_key:='idem-001',p_request_id:='req-001')->>'already_reserved')::boolean, true, '3: same idempotency_key already_reserved');
+-- 4: settle reserved->succeeded
 SELECT is((public.settle_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_idempotency_key:='idem-001',p_status:='succeeded',p_input_tokens:=1200,p_output_tokens:=800,p_actual_cost_usd:=0.002,p_model:='deepseek-v4-flash',p_request_id:='req-001')->>'success')::boolean, true, '4: settle reserved->succeeded');
+-- 5: repeat settle idempotent
 SELECT is((public.settle_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_idempotency_key:='idem-001',p_status:='succeeded',p_input_tokens:=1200,p_output_tokens:=800,p_actual_cost_usd:=0.002,p_model:='deepseek-v4-flash',p_request_id:='req-001')->>'idempotent')::boolean, true, '5: repeat settle idempotent');
+-- 6: second reserve with different key succeeds
 SELECT is((public.reserve_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_feature:='content_factory',p_request_limit:=10,p_daily_cost_limit_usd:=10.0,p_reserved_estimated_cost_usd:=0.01,p_idempotency_key:='idem-002',p_request_id:='req-002')->>'success')::boolean, true, '6: second reserve succeeds');
+-- 7: release reserved->released
 SELECT is((public.release_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_idempotency_key:='idem-002',p_reason:='test_release')->>'success')::boolean, true, '7: release reserved->released');
+-- 8: repeat release idempotent
 SELECT is((public.release_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_idempotency_key:='idem-002',p_reason:='test_release')->>'idempotent')::boolean, true, '8: repeat release idempotent');
+-- 9: settled cannot be released
 SELECT throws_ok($$SELECT public.release_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000001','idem-001','test')$$, '22023', NULL, '9: settled cannot be released');
+-- 10: released cannot be settled
 SELECT throws_ok($$SELECT public.settle_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000001','idem-002','succeeded',100,100,0.001,'deepseek-v4-flash','req-099')$$, '22023', NULL, '10: released cannot be settled');
+-- 11: cross-workspace reserve fails
 SELECT throws_ok($$SELECT public.reserve_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000002','content_factory',NULL,NULL,10,10.0,0.01,'idem-w2-001','req-w2-001')$$, '42501', NULL, '11: cross-workspace reserve fails');
+-- 12: User B cannot settle User A
 SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-1111-4000-8000-000000000002"}';
 SELECT throws_ok($$SELECT public.settle_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000001','idem-001','succeeded',100,100,0.001,'deepseek-v4-flash','req-099')$$, '42501', NULL, '12: User B cannot settle User A');
 RESET ROLE; SET LOCAL ROLE anon;
+-- 13-15: anon cannot call RPCs
 SELECT throws_ok($$SELECT public.reserve_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000001','content_factory',NULL,NULL,10,10.0,0.01,'idem-anon-001','req-anon-001')$$, '42501', NULL, '13: anon cannot reserve');
 SELECT throws_ok($$SELECT public.settle_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000001','idem-001','succeeded',100,100,0.001,'deepseek-v4-flash','req-099')$$, '42501', NULL, '14: anon cannot settle');
 SELECT throws_ok($$SELECT public.release_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000001','idem-001','test')$$, '42501', NULL, '15: anon cannot release');
 RESET ROLE; SET LOCAL ROLE authenticated; SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-1111-4000-8000-000000000001"}';
+-- 16-17: request limit exceeded
 SELECT is((public.reserve_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_feature:='content_factory',p_request_limit:=1,p_daily_cost_limit_usd:=10.0,p_reserved_estimated_cost_usd:=0.01,p_idempotency_key:='idem-limit-001',p_request_id:='req-limit-001')->>'success')::boolean, false, '16: request limit exceeded');
 SELECT is((public.reserve_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_feature:='content_factory',p_request_limit:=1,p_daily_cost_limit_usd:=10.0,p_reserved_estimated_cost_usd:=0.01,p_idempotency_key:='idem-limit-001',p_request_id:='req-limit-001')->>'limit_reason'), 'request_limit', '17: limit_reason=request_limit');
+-- 18: cost limit exceeded (new) — $0.01 reserve with $0.00 daily limit
 RESET ROLE; SET LOCAL ROLE authenticated; SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-1111-4000-8000-000000000001"}';
-SELECT lives_ok($$SELECT public.reserve_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000001','content_factory',NULL,NULL,10,10.0,0.01,'idem-comp-001','req-comp-001')$$, '18: reserve for compliance test');
-SELECT is((public.settle_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_idempotency_key:='idem-comp-001',p_status:='rejected_compliance',p_input_tokens:=500,p_output_tokens:=300,p_actual_cost_usd:=0.001,p_model:='deepseek-v4-flash',p_request_id:='req-comp-001')->>'success')::boolean, true, '19: settle rejected_compliance succeeds');
+SELECT is((public.reserve_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_feature:='content_factory',p_request_limit:=10,p_daily_cost_limit_usd:=0.00,p_reserved_estimated_cost_usd:=0.01,p_idempotency_key:='idem-cost-001',p_request_id:='req-cost-001')->>'success')::boolean, false, '18: cost limit exceeded');
+SELECT is((public.reserve_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_feature:='content_factory',p_request_limit:=10,p_daily_cost_limit_usd:=0.00,p_reserved_estimated_cost_usd:=0.01,p_idempotency_key:='idem-cost-001',p_request_id:='req-cost-001')->>'limit_reason'), 'cost_limit', '19: limit_reason=cost_limit');
+RESET ROLE; SET LOCAL ROLE authenticated; SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-1111-4000-8000-000000000001"}';
+-- 20: settle rejected_compliance
+SELECT lives_ok($$SELECT public.reserve_ai_quota('aaaaaaaa-1111-4000-8000-000000000001','bbbbbbbb-1111-4000-8000-000000000001','content_factory',NULL,NULL,10,10.0,0.01,'idem-comp-001','req-comp-001')$$, '20: reserve for compliance test');
+SELECT is((public.settle_ai_quota(p_user_id:='aaaaaaaa-1111-4000-8000-000000000001',p_workspace_id:='bbbbbbbb-1111-4000-8000-000000000001',p_idempotency_key:='idem-comp-001',p_status:='rejected_compliance',p_input_tokens:=500,p_output_tokens:=300,p_actual_cost_usd:=0.001,p_model:='deepseek-v4-flash',p_request_id:='req-comp-001')->>'success')::boolean, true, '20: settle rejected_compliance succeeds');
 RESET ROLE;
 SELECT * FROM finish();
 ROLLBACK;
