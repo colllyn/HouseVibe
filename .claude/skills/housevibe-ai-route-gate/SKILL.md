@@ -465,8 +465,12 @@ Ask `quality-reviewer` to perform a final read-only review of:
 - generate-content Provider DTO is narrow — no userId, workspaceId, propertyId, clientId
 - generate-content response matches §10.6: { contentVersionId, platform, output, copyAllowed, complianceStatus, model, usage, requestId }
 - generate-content output preserves contract types: factualSummary, requiresFactReview, factsUsed, riskFlags, complianceFlags
-- generate-content copyAllowed reflects requiresFactReview; complianceStatus is "pending" until P3-AI-010 lands
-- generate-content §10.6 pipeline is structural; full enforcement activates with P3-AI-014 (quota RPC) + P3-AI-010 (compliance)
+- generate-content compliance check calls `checkCompliance()` deterministically (no AI/network/DB)
+- generate-content complianceStatus is "clean"|"review"|"blocked" — never "pending"
+- generate-content blocked content returns 200 with copyAllowed=false per §10.6 (not 422)
+- generate-content review content returns copyAllowed=false
+- generate-content compliance flags use stable codes; suggestions are public-safe
+- generate-content §10.6 pipeline: compliance active (P3-AI-010 ✓), quota deferred (P3-AI-014)
 
 ---
 

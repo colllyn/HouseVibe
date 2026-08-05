@@ -22,6 +22,7 @@ import { hasFeature } from "@/features/access-control/guards";
 import { createDeepSeekTextProvider } from "@/lib/ai/providers/deepseek-text-provider";
 import { DeepSeekProviderError } from "@/lib/ai/types";
 import { redactPropertyInput } from "@/lib/ai/privacy/redact-property-input";
+import { checkCompliance, toResponseStatus } from "@/lib/compliance/check";
 import type {
   DeepSeekTextProvider,
   ContentGenerationInput,
@@ -50,19 +51,8 @@ const GenerateContentRequestSchema = z
   .strict();
 
 // ============================================================
-// Response type — §10.6 full envelope
+// Response shape per §10.6: complianceStatus is "clean"|"review"|"blocked"
 // ============================================================
-
-interface ContentGenerationResponse {
-  contentVersionId: null;
-  platform: string;
-  output: GeneratedContent;
-  copyAllowed: boolean;
-  complianceStatus: "clean" | "pending" | "review" | "blocked";
-  model: null;
-  usage: null;
-  requestId: null;
-}
 
 // ============================================================
 // DB property row Zod schema — validates Supabase query result
@@ -187,6 +177,33 @@ function dbPropertyToRedactedFacts(p: DbPropertyRow): RedactedPropertyFacts {
     drawbacks: p.drawbacks,
     description: p.description,
   };
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+
+/**
+ * Extract all scannable text from a GeneratedContent result for compliance checking.
+ */
+function extractScanText(result: GeneratedContent, platform: string): string {
+  const parts: string[] = [];
+  if (result.platform === "xiaohongshu" && platform === "xiaohongshu") {
+    parts.push(result.body);
+    parts.push(result.hook);
+    parts.push(result.coverText);
+    parts.push(result.factualSummary);
+    result.titleOptions.forEach((t) => parts.push(t));
+  } else if (result.platform === "douyin" && platform === "douyin") {
+    parts.push(result.fullVoiceover);
+    parts.push(result.caption);
+    parts.push(result.subtitles);
+    result.hookOptions.forEach((h) => parts.push(h));
+  } else if (result.platform === "wechat_moments") {
+    result.copyOptions.forEach((c) => parts.push(c));
+    parts.push(result.nineGridSuggestion);
+  }
+  return parts.join("\n");
 }
 
 // ============================================================
@@ -349,16 +366,29 @@ export function createGenerateContentHandler(
 
       // Step 7: Structured Output — validated by Provider (ContentGenerationOutputSchema)
 
-      // Step 8: Fact verification (P3-AI-009 — structural; output validated by Provider Schema)
+      // Step 8: Fact verification (P3-AI-009 — structural)
       const requiresFactReview = result.requiresFactReview ?? false;
 
-      // Step 9: Compliance scan (P3-AI-010 — "pending" until compliance module lands)
-      const complianceStatus: ContentGenerationResponse["complianceStatus"] = "pending";
-      const copyAllowed = !requiresFactReview;
+      // Step 9: Compliance scan (P3-AI-010 — deterministic, no AI/network/DB)
+      const contentText = extractScanText(result, platform);
+      const compliance = checkCompliance({
+        contentText,
+        platform,
+        propertyFacts: {
+          district: facts.district,
+          monthlyRent: facts.monthlyRent,
+          bedrooms: facts.bedrooms,
+          areaSqm: facts.areaSqm,
+          hasElevator: facts.hasElevator,
+          petsAllowed: facts.petsAllowed,
+          cookingAllowed: facts.cookingAllowed,
+        },
+      });
 
-      // Step 10: Usage settlement — deferred (no ai_usage_logs until quota RPC is real)
-      // Response excludes actual token counts until settlement is implemented
+      const complianceStatus = toResponseStatus(compliance.status);
+      const copyAllowed = !requiresFactReview && compliance.copyAllowed;
 
+      // Step 10: Usage settlement — deferred (P3-AI-014)
       // Success envelope — §10.6 full shape
       return jsonResponse(
         {

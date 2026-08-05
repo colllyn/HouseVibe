@@ -510,7 +510,7 @@ describe("POST /api/ai/generate-content", () => {
     expect(Array.isArray(output.complianceFlags)).toBe(true);
   });
 
-  // 22. copyAllowed reflects requiresFactReview
+  // 22. copyAllowed reflects requiresFactReview + compliance
   it("22: requiresFactReview=true → copyAllowed=false", async () => {
     const provider = makeMockProvider({
       generateContent: async () => ({ ...DEFAULT_RESULT, requiresFactReview: true }),
@@ -519,7 +519,61 @@ describe("POST /api/ai/generate-content", () => {
     const res = await handler(makeRequest(validBody()));
     const data = (await getResponseBody(res)).data as Record<string, unknown>;
     expect(data.copyAllowed).toBe(false);
-    expect(data.complianceStatus).toBe("pending");
+    // complianceStatus comes from actual check, not "pending"
+    expect(data.complianceStatus).not.toBe("pending");
+  });
+
+  // 22a. Compliance check happens after Provider, before response
+  it("22a: blocked content returns 200 (not 422) per §10.6", async () => {
+    // Per api-contract §10.6: post-generation blocked → 200 with copyAllowed=false
+    const provider = makeMockProvider({
+      generateContent: async () => ({
+        ...DEFAULT_RESULT,
+        body: "最好的房子保证升值电话13800138000",
+      }),
+    });
+    const handler = createHandler(provider);
+    const res = await handler(makeRequest(validBody()));
+    expect(res.status).toBe(200);
+    const data = (await getResponseBody(res)).data as Record<string, unknown>;
+    expect(data.complianceStatus).toBe("blocked");
+    expect(data.copyAllowed).toBe(false);
+    // Content still returned (not stripped) per §10.6 contract
+    expect(data.output).toBeDefined();
+  });
+
+  // 22b. douyin platform → compliance scan on voiceover/caption
+  it("22b: douyin platform → compliance scans douyin fields", async () => {
+    const provider = makeMockProvider({
+      generateContent: async () => ({
+        platform: "douyin" as const,
+        hookOptions: ["超值好房"],
+        coverText: "好房出租",
+        fullVoiceover: "这是全广州最好的房子，保证升值",
+        shots: [],
+        subtitles: "",
+        caption: "",
+        commentCta: "私信我",
+        privateMessageKeyword: "租房",
+        hashtags: [],
+        missingShots: [],
+        factsUsed: [],
+        visualFactsUsed: [],
+        missingInformation: [],
+        riskFlags: [],
+        complianceFlags: [],
+        requiresFactReview: false,
+      }),
+    });
+    const handler = createHandler(provider);
+    const res = await handler(
+      makeRequest(validBody({ platform: "douyin" }))
+    );
+    expect(res.status).toBe(200);
+    const data = (await getResponseBody(res)).data as Record<string, unknown>;
+    // Voiceover contains blocked content → compliance should flag it
+    expect(data.complianceStatus).toBe("blocked");
+    expect(data.copyAllowed).toBe(false);
   });
 
   // 23. AI_NOT_CONFIGURED → 503
