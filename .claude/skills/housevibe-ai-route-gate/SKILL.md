@@ -449,6 +449,12 @@ Ask `quality-reviewer` to perform a final read-only review of:
 - Tests prove Provider never receives raw PII (phone, email, ID, address, key location on property; phone, email, wechat, name, ID, passport on client)
 - High-risk input (mostly PII after stripping) returns 422 with Provider call count = 0 on both extraction routes
 - Client redaction does not duplicate or drift from property redaction regex patterns
+- ClientExtractionInput type matches wire DTO exactly: `{ text, sourcePlatform, requestId }` — no AIRequestContext inheritance
+- Handler constructs `ClientExtractionInput` directly without `as`-cast or type assertion
+- Public API request rejects client-submitted `requestId` (strict schema returns 422)
+- `requestId` is server-generated via `crypto.randomUUID()`
+- TypeScript contract (`types.ts`) and API contract (`api-contract.md §10.3`) are consistent
+- AI contract (`ai-contract.md §2.2`) matches the narrow wire DTO
 
 ---
 
@@ -490,6 +496,10 @@ ALL of the following must be true:
 32. extract-client Provider DTO is narrow (no identity/workspace/config)
 33. High-risk client input fail closed (422, Provider calls = 0)
 34. Client redaction patterns aligned with property redaction (no drift)
+35. ClientExtractionInput type equals wire DTO — no AIRequestContext, no identity fields
+36. No `as`-cast or type assertion on Provider DTO construction
+37. Public request rejects client-submitted requestId (strict schema)
+38. TypeScript types, AI contract, and API contract are mutually consistent
 
 Any of the following MUST cause FAIL:
 
@@ -509,6 +519,9 @@ Any of the following MUST cause FAIL:
 - Provider DTO contains userId, workspaceId, modelName, or promptVersion
 - High-risk input not rejected (must fail closed, Provider call count = 0)
 - Client redaction duplicates or drifts from property redaction regex patterns
+- ClientExtractionInput type includes identity, workspace, or model config fields
+- Handler uses `as`-cast or type assertion to bypass Provider DTO type checking
+- Public API contract lists `requestId` as accepted client request field
 
 ---
 

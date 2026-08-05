@@ -992,12 +992,8 @@ describe("DeepSeekTextProvider", () => {
 
       const result = await provider.extractClient({
         requestId: "req-client-1",
-        promptVersion: "1.0",
-        modelName: "deepseek-v4-flash",
         text: "客户张三，预算2000-4000，想在天河区租两房",
         sourcePlatform: "wechat",
-        workspaceId: "ws-1",
-        userId: "user-1",
       });
 
       expect(result.data.name).toBe("张三");

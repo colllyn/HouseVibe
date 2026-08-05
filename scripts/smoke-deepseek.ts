@@ -164,12 +164,8 @@ async function run(): Promise<void> {
   await record("3.1: Extract client requirements from text", async () => {
     const result = await provider.extractClient({
       requestId: "smoke-ec-001",
-      promptVersion: "1.0",
-      modelName: "deepseek-v4-flash",
       text: "客户张三，预算2000-4000，想在天河区租两房，最好能养猫",
       sourcePlatform: "wechat",
-      workspaceId: "ws-smoke",
-      userId: "user-smoke",
     });
     return validateExtractionResult(result, "client");
   });

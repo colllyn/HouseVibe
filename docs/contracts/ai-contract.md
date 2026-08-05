@@ -143,11 +143,10 @@ interface PropertyExtractionResult {
 }
 
 // --- extractClient ---
-interface ClientExtractionInput extends AIRequestContext {
+interface ClientExtractionInput {
   text: string;
-  sourcePlatform?: string;
-  workspaceId: string;
-  userId: string;
+  sourcePlatform: "wechat" | "text" | "other";
+  requestId: string;
 }
 
 interface ClientExtractionResult {

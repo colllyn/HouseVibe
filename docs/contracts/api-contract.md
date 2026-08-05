@@ -953,16 +953,30 @@
 | Owner Agent | ai-deepseek-engineer |
 | Feature 权限 | 需要 `ai_data_extraction` |
 
-**Request Body** (Zod: `ExtractClientInputSchema`):
+**Request Body** (Zod: `ExtractClientInputSchema`, strict):
 ```json
 {
   "text": "聊天记录文本",
-  "sourcePlatform": "wechat",
-  "requestId": "uuid"
+  "sourcePlatform": "wechat"
 }
 ```
 
+- `text` (必填): 需要提取的文本，1–5000 字符，trim 后不得为空。
+- `sourcePlatform` (可选, 默认 `"wechat"`): 文本来源平台，枚举值 `"wechat"` | `"text"` | `"other"`。
+- `requestId` 由服务端生成，不允许客户端提交。客户端提交额外字段（包括 `requestId`、`workspaceId`、`userId`、`modelName`）返回 422 `VALIDATION_FAILED`。
+
 **成功响应** (200): 返回结构化客户字段（不含 phone/wechat 原始文本中的值需保留在 rawText 中）。
+
+**Provider DTO** (服务端→Provider):
+```json
+{
+  "text": "脱敏后的文本",
+  "sourcePlatform": "wechat",
+  "requestId": "<服务端UUID>"
+}
+```
+
+Provider DTO 不包含 `userId`、`workspaceId`、`modelName`、`promptVersion` 或任何身份/配置字段。
 
 ---
 

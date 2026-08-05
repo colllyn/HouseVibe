@@ -250,14 +250,11 @@ export function createExtractClientHandler(
 
       // 7. Call Provider with REDACTED text — narrow DTO, no identity
       const provider = getProvider();
-      // Provider only uses text, sourcePlatform, requestId at runtime.
-      // Construct minimal DTO; unused fields (workspaceId, userId,
-      // promptVersion, modelName) in ClientExtractionInput are never read.
-      const providerInput = {
+      const providerInput: ClientExtractionInput = {
         text: redaction.redactedText,
         sourcePlatform,
         requestId: crypto.randomUUID(),
-      } as ClientExtractionInput;
+      };
 
       const result = await provider.extractClient(
         providerInput,
