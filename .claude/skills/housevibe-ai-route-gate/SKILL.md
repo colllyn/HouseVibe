@@ -456,13 +456,17 @@ Ask `quality-reviewer` to perform a final read-only review of:
 - `requestId` is server-generated via `crypto.randomUUID()`
 - TypeScript contract (`types.ts`) and API contract (`api-contract.md §10.3`) are consistent
 - AI contract (`ai-contract.md §2.2`) matches the narrow wire DTO
-- generate-content route checks content_factory entitlement (not ai_data_extraction or semantic_search)
-- generate-content request schema is strict; accepts only safe property facts (no propertyId, no DB loading)
-- generate-content redacts PII from property description before Provider call
+- generate-content route checks content_factory entitlement (CONTENT_FACTORY_NOT_ALLOWED, not FEATURE_NOT_ALLOWED)
+- generate-content request schema is strict: accepts propertyId (UUID), rejects inline propertyFacts and extra fields
+- generate-content loads property from DB; verifies workspace ownership OR (is_shared AND allow_marketing_reuse)
+- generate-content denies PROPERTY_NOT_MARKETING_REUSABLE (403) for unauthorized properties
+- generate-content reserves quota via RPC; returns QUOTA_EXCEEDED (429) on denial, Provider call count = 0
+- generate-content redacts PII from DB-loaded property description and addressText before Provider call
 - generate-content Provider DTO is narrow — no userId, workspaceId, propertyId, clientId
-- generate-content response excludes model, tokens, usage, requestId, upstreamStatus
+- generate-content response matches §10.6: { contentVersionId, platform, output, copyAllowed, complianceStatus, model, usage, requestId }
 - generate-content output preserves contract types: factualSummary, requiresFactReview, factsUsed, riskFlags, complianceFlags
-- generate-content performs no database writes
+- generate-content copyAllowed reflects requiresFactReview; complianceStatus is "pending" until P3-AI-010 lands
+- generate-content §10.6 pipeline is structural; full enforcement activates with P3-AI-014 (quota RPC) + P3-AI-010 (compliance)
 
 ---
 
@@ -509,11 +513,11 @@ ALL of the following must be true:
 37. Public request rejects client-submitted requestId (strict schema)
 38. TypeScript types, AI contract, and API contract are mutually consistent
 39. generate-content route uses content_factory entitlement with CONTENT_FACTORY_NOT_ALLOWED error code
-40. generate-content request schema is strict, accepts only safe property facts
-41. generate-content Provider DTO excludes identity/workspace fields
-42. generate-content response excludes model metadata (no model, tokens, usage, requestId)
+40. generate-content request uses propertyId (UUID), loads property from DB, verifies ownership+marketing_reuse
+41. generate-content Provider DTO excludes identity/workspace fields; DB-loaded facts only
+42. generate-content response matches §10.6 full envelope: { contentVersionId, platform, output, copyAllowed, complianceStatus, model, usage, requestId }
 43. generate-content output preserves contract types (factualSummary, requiresFactReview boolean, array types)
-44. generate-content performs no database writes
+44. generate-content performs no database writes; quota via RPC; compliance deferred pending P3-AI-010
 
 Any of the following MUST cause FAIL:
 

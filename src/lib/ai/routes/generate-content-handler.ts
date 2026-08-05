@@ -1,14 +1,18 @@
 /**
  * Generate Content Route Handler Factory
  *
- * Generates platform-specific content (xiaohongshu, douyin, wechat_moments)
- * from safe property facts. Requires: content_factory entitlement.
+ * Generates platform-specific marketing content (xiaohongshu, douyin, wechat_moments)
+ * from a server-verified property. Requires: content_factory entitlement.
  *
- * Contract: docs/contracts/ai-contract.md v2.0
+ * Contract: docs/contracts/ai-contract.md v2.0 §2.2, §16
  *           docs/contracts/api-contract.md §10.6
  *
- * Reuses the same security architecture as other AI routes:
- * Auth → Workspace → Entitlement → Schema → PII redaction → Provider → Envelope
+ * Pipeline: Auth → Workspace → Entitlement → Schema → Load Property →
+ *           Quota Reserve → PII Redact → Provider → Fact Verify →
+ *           Compliance Scan → Usage Settle → Envelope
+ *
+ * Dependencies: P3-AI-014 (quota RPC), P3-AI-010 (compliance module).
+ * These steps are structural; full enforcement activates when dependencies land.
  */
 
 import { type NextRequest } from "next/server";
@@ -22,45 +26,17 @@ import type {
   DeepSeekTextProvider,
   ContentGenerationInput,
   GeneratedContent,
+  RedactedPropertyFacts,
 } from "@/lib/ai/types";
 
 // ============================================================
-// Request Schema — safe property facts only, no PII
+// Request Schema — §10.6: propertyId-based, no inline facts
 // ============================================================
-
-const redactedPropertyFactsSchema = z.object({
-  title: z.string().max(200).optional(),
-  city: z.string().max(50).optional(),
-  district: z.string().max(50).optional(),
-  businessArea: z.string().max(100).optional(),
-  communityName: z.string().max(100).optional(),
-  addressText: z.string().max(200).optional(),
-  rentalType: z.string().max(50).optional(),
-  monthlyRent: z.number().min(0).optional(),
-  depositTerms: z.string().max(200).optional(),
-  bedrooms: z.number().int().min(0).optional(),
-  livingRooms: z.number().int().min(0).optional(),
-  bathrooms: z.number().int().min(0).optional(),
-  areaSqm: z.number().min(0).optional(),
-  hasElevator: z.boolean().optional(),
-  orientation: z.string().max(50).optional(),
-  decoration: z.string().max(100).optional(),
-  availableFrom: z.string().max(50).optional(),
-  minimumLeaseMonths: z.number().int().min(0).optional(),
-  petsAllowed: z.boolean().optional(),
-  cookingAllowed: z.boolean().optional(),
-  subwayText: z.string().max(200).optional(),
-  facilities: z.unknown().optional(),
-  tags: z.array(z.string().max(100)).max(20).optional(),
-  sellingPoints: z.array(z.string().max(200)).max(20).optional(),
-  drawbacks: z.array(z.string().max(200)).max(20).optional(),
-  description: z.string().max(2000).optional(),
-});
 
 const GenerateContentRequestSchema = z
   .object({
+    propertyId: z.string().uuid(),
     platform: z.enum(["xiaohongshu", "douyin", "wechat_moments"]),
-    propertyFacts: redactedPropertyFactsSchema,
     targetAudience: z.string().max(200).optional(),
     contentAngle: z.string().max(200).optional(),
     contentGoal: z.string().max(200).optional(),
@@ -69,14 +45,65 @@ const GenerateContentRequestSchema = z
     isOnCamera: z.boolean().optional(),
     showDrawbacks: z.boolean().optional(),
     privateMessageKeyword: z.string().max(50).optional(),
+    idempotencyKey: z.string().min(1).max(100),
   })
   .strict();
 
 // ============================================================
-// Response type (GeneratedContent is the provider output)
+// Response type — §10.6 full envelope
 // ============================================================
 
-type SafeContentResult = GeneratedContent;
+interface ContentGenerationResponse {
+  contentVersionId: null;
+  platform: string;
+  output: GeneratedContent;
+  copyAllowed: boolean;
+  complianceStatus: "clean" | "pending" | "review" | "blocked";
+  model: null;
+  usage: null;
+  requestId: null;
+}
+
+// ============================================================
+// DB property row Zod schema — validates Supabase query result
+// ============================================================
+
+const DbPropertyRowSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  is_shared: z.boolean(),
+  allow_marketing_reuse: z.boolean(),
+  status: z.string().optional(),
+  deleted_at: z.string().nullable().optional(),
+  title: z.string().optional(),
+  city: z.string().optional(),
+  district: z.string().optional(),
+  business_area: z.string().optional(),
+  community_name: z.string().optional(),
+  rental_type: z.string().optional(),
+  monthly_rent: z.number().optional(),
+  deposit_terms: z.string().optional(),
+  bedrooms: z.number().optional(),
+  living_rooms: z.number().optional(),
+  bathrooms: z.number().optional(),
+  area_sqm: z.number().optional(),
+  has_elevator: z.boolean().optional(),
+  orientation: z.string().optional(),
+  decoration: z.string().optional(),
+  available_from: z.string().optional(),
+  minimum_lease_months: z.number().optional(),
+  pets_allowed: z.boolean().optional(),
+  cooking_allowed: z.boolean().optional(),
+  subway_text: z.string().optional(),
+  facilities: z.unknown().optional(),
+  tags: z.array(z.string()).optional(),
+  selling_points: z.array(z.string()).optional(),
+  drawbacks: z.array(z.string()).optional(),
+  description: z.string().optional(),
+  address_text: z.string().optional(),
+});
+
+type DbPropertyRow = z.infer<typeof DbPropertyRowSchema>;
 
 // ============================================================
 // Error Mapping
@@ -94,10 +121,7 @@ function mapProviderError(
     case "AI_NOT_CONFIGURED":
       return {
         status: 503,
-        body: {
-          code: "AI_NOT_CONFIGURED",
-          message: "AI 服务未配置，请联系管理员",
-        },
+        body: { code: "AI_NOT_CONFIGURED", message: "AI 服务未配置，请联系管理员" },
       };
     case "AI_TIMEOUT":
       return {
@@ -117,10 +141,7 @@ function mapProviderError(
     case "AI_INVALID_RESPONSE":
       return {
         status: 502,
-        body: {
-          code: "AI_INVALID_RESPONSE",
-          message: "AI 内容生成异常，请重试",
-        },
+        body: { code: "AI_INVALID_RESPONSE", message: "AI 内容生成异常，请重试" },
       };
     case "AI_REQUEST_ABORTED":
       throw err;
@@ -128,21 +149,44 @@ function mapProviderError(
 }
 
 // ============================================================
-// Helper
+// Helpers
 // ============================================================
 
 function urlOrigin(req: NextRequest): string {
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
-  const host =
-    req.headers.get("x-forwarded-host") ??
-    req.headers.get("host") ??
-    "localhost";
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "localhost";
   return `${proto}://${host}`;
 }
 
-/** Strip provider metadata from result before returning to client. */
-function sanitizeResult(result: GeneratedContent): SafeContentResult {
-  return result;
+function dbPropertyToRedactedFacts(p: DbPropertyRow): RedactedPropertyFacts {
+  return {
+    title: p.title,
+    city: p.city,
+    district: p.district,
+    businessArea: p.business_area,
+    communityName: p.community_name,
+    addressText: p.address_text,
+    rentalType: p.rental_type,
+    monthlyRent: p.monthly_rent,
+    depositTerms: p.deposit_terms,
+    bedrooms: p.bedrooms,
+    livingRooms: p.living_rooms,
+    bathrooms: p.bathrooms,
+    areaSqm: p.area_sqm,
+    hasElevator: p.has_elevator,
+    orientation: p.orientation,
+    decoration: p.decoration,
+    availableFrom: p.available_from,
+    minimumLeaseMonths: p.minimum_lease_months,
+    petsAllowed: p.pets_allowed,
+    cookingAllowed: p.cooking_allowed,
+    subwayText: p.subway_text,
+    facilities: p.facilities,
+    tags: p.tags,
+    sellingPoints: p.selling_points,
+    drawbacks: p.drawbacks,
+    description: p.description,
+  };
 }
 
 // ============================================================
@@ -152,8 +196,7 @@ function sanitizeResult(result: GeneratedContent): SafeContentResult {
 export function createGenerateContentHandler(
   providerFactory?: () => DeepSeekTextProvider
 ) {
-  const getProvider =
-    providerFactory ?? (() => createDeepSeekTextProvider());
+  const getProvider = providerFactory ?? (() => createDeepSeekTextProvider());
 
   return async function POST(request: NextRequest) {
     const origin = urlOrigin(request);
@@ -165,21 +208,16 @@ export function createGenerateContentHandler(
     const { client, jsonResponse } = await createRouteHandlerClient(request);
 
     try {
-      // 1. Authentication
-      const {
-        data: { user },
-      } = await client.auth.getUser();
+      // Step 1: Authentication
+      const { data: { user } } = await client.auth.getUser();
       if (!user) {
         return jsonResponse(
-          {
-            data: null,
-            error: { code: "UNAUTHENTICATED", message: "未登录" },
-          },
+          { data: null, error: { code: "UNAUTHENTICATED", message: "未登录" } },
           { status: 401, headers: h }
         );
       }
 
-      // 2. Workspace membership
+      // Step 2: Workspace membership
       const { data: member } = await client
         .from("workspace_members")
         .select("workspace_id")
@@ -190,60 +228,36 @@ export function createGenerateContentHandler(
 
       if (!member) {
         return jsonResponse(
-          {
-            data: null,
-            error: {
-              code: "WORKSPACE_ACCESS_DENIED",
-              message: "无工作区权限",
-            },
-          },
+          { data: null, error: { code: "WORKSPACE_ACCESS_DENIED", message: "无工作区权限" } },
           { status: 403, headers: h }
         );
       }
 
-      // 3. Entitlement check — must be content_factory
+      const workspaceId: string = member.workspace_id;
+
+      // Step 2b: Entitlement — content_factory
       const entitled = await hasFeature("content_factory");
       if (!entitled) {
         return jsonResponse(
-          {
-            data: null,
-            error: {
-              code: "CONTENT_FACTORY_NOT_ALLOWED",
-              message: "需要 content_factory 功能授权",
-            },
-          },
+          { data: null, error: { code: "CONTENT_FACTORY_NOT_ALLOWED", message: "需要 content_factory 功能授权" } },
           { status: 403, headers: h }
         );
       }
 
-      // 4. Content-Type validation
+      // Step 2c: Content-Type validation
       const contentType = request.headers.get("content-type") ?? "";
       if (!contentType.includes("application/json")) {
         return jsonResponse(
-          {
-            data: null,
-            error: {
-              code: "VALIDATION_FAILED",
-              message: "请求格式必须为 JSON",
-            },
-          },
+          { data: null, error: { code: "VALIDATION_FAILED", message: "请求格式必须为 JSON" } },
           { status: 422, headers: h }
         );
       }
 
-      // 5. Body parsing and validation
+      // Step 2d: Body parsing
       let body: unknown;
-      try {
-        body = await request.json();
-      } catch {
+      try { body = await request.json(); } catch {
         return jsonResponse(
-          {
-            data: null,
-            error: {
-              code: "VALIDATION_FAILED",
-              message: "请求体不是有效的 JSON",
-            },
-          },
+          { data: null, error: { code: "VALIDATION_FAILED", message: "请求体不是有效的 JSON" } },
           { status: 422, headers: h }
         );
       }
@@ -251,88 +265,128 @@ export function createGenerateContentHandler(
       const parsed = GenerateContentRequestSchema.safeParse(body);
       if (!parsed.success) {
         const first = parsed.error.issues[0];
-        const msg = first
-          ? `${first.path.join(".")}: ${first.message}`
-          : "请求参数无效";
+        const msg = first ? `${first.path.join(".")}: ${first.message}` : "请求参数无效";
         return jsonResponse(
           { data: null, error: { code: "VALIDATION_FAILED", message: msg } },
           { status: 422, headers: h }
         );
       }
 
-      const { platform, propertyFacts, ...contentOptions } = parsed.data;
+      const { propertyId, platform, idempotencyKey, ...contentOptions } = parsed.data;
 
-      // 6. Server-side PII redaction on free-text fields (description, addressText)
-      let safeDescription = propertyFacts.description;
-      let safeAddressText = propertyFacts.addressText;
+      // Step 3: Load property from DB — verify ownership + marketing_reuse
+      const { data: property, error: propErr } = await client
+        .from("properties")
+        .select("*")
+        .eq("id", propertyId)
+        .is("deleted_at", null)
+        .single();
 
-      if (safeDescription) {
-        const redaction = redactPropertyInput(safeDescription);
+      if (propErr || !property) {
+        return jsonResponse(
+          { data: null, error: { code: "RESOURCE_NOT_FOUND", message: "房源不存在" } },
+          { status: 404, headers: h }
+        );
+      }
+
+      const p = DbPropertyRowSchema.parse(property);
+
+      // Must belong to workspace OR be shared with marketing_reuse
+      const isOwn = p.workspace_id === workspaceId;
+      const isReusable = p.is_shared && p.allow_marketing_reuse;
+      if (!isOwn && !isReusable) {
+        return jsonResponse(
+          { data: null, error: { code: "PROPERTY_NOT_MARKETING_REUSABLE", message: "房源未授权营销复用" } },
+          { status: 403, headers: h }
+        );
+      }
+
+      // Step 4: Atomic quota reservation (P3-AI-014 — structural; enforced when RPC lands)
+      // In test mock: RPC returns success. In production without RPC: returns structured error.
+      const { error: quotaErr } = await client.rpc("reserve_ai_quota", {
+        _user_id: user.id,
+        _feature: "content_factory",
+        _estimated_tokens: 4096,
+        _idempotency_key: idempotencyKey,
+      });
+
+      if (quotaErr) {
+        return jsonResponse(
+          { data: null, error: { code: "QUOTA_EXCEEDED", message: "AI 配额已用完，请明天再试" } },
+          { status: 429, headers: h }
+        );
+      }
+
+      // Step 5: Privacy — redact DB-loaded property free-text fields
+      const facts = dbPropertyToRedactedFacts(p);
+      if (facts.description) {
+        const redaction = redactPropertyInput(facts.description);
         if (!redaction.safeToSend) {
           return jsonResponse(
-            {
-              data: null,
-              error: {
-                code: "VALIDATION_FAILED",
-                message: "房源描述包含过多个人隐私信息，请移除后再试",
-              },
-            },
+            { data: null, error: { code: "COMPLIANCE_BLOCKED", message: "房源描述包含过多隐私信息，内容生成被拒绝" } },
             { status: 422, headers: h }
           );
         }
-        safeDescription = redaction.redactedText;
+        facts.description = redaction.redactedText;
+      }
+      if (facts.addressText) {
+        const redaction = redactPropertyInput(facts.addressText);
+        facts.addressText = redaction.safeToSend ? redaction.redactedText : undefined;
       }
 
-      if (safeAddressText) {
-        const redaction = redactPropertyInput(safeAddressText);
-        safeAddressText = redaction.safeToSend
-          ? redaction.redactedText
-          : undefined; // drop if pure PII
-      }
-
-      // 7. Call Provider with safe facts — narrow DTO, no identity
+      // Step 6: Model call — narrow DTO, no identity
       const provider = getProvider();
       const providerInput: ContentGenerationInput = {
         requestId: crypto.randomUUID(),
         promptVersion: "1.0.0",
         modelName: "",
         platform,
-        propertyFacts: {
-          ...propertyFacts,
-          description: safeDescription,
-          addressText: safeAddressText,
-        },
+        propertyFacts: facts,
         ...contentOptions,
       };
 
-      const result = await provider.generateContent(
-        providerInput,
-        request.signal
-      );
+      const result = await provider.generateContent(providerInput, request.signal);
 
-      // 8. Success — return content
+      // Step 7: Structured Output — validated by Provider (ContentGenerationOutputSchema)
+
+      // Step 8: Fact verification (P3-AI-009 — structural; output validated by Provider Schema)
+      const requiresFactReview = result.requiresFactReview ?? false;
+
+      // Step 9: Compliance scan (P3-AI-010 — "pending" until compliance module lands)
+      const complianceStatus: ContentGenerationResponse["complianceStatus"] = "pending";
+      const copyAllowed = !requiresFactReview;
+
+      // Step 10: Usage settlement — deferred (no ai_usage_logs until quota RPC is real)
+      // Response excludes actual token counts until settlement is implemented
+
+      // Success envelope — §10.6 full shape
       return jsonResponse(
-        { data: { content: sanitizeResult(result) }, error: null },
+        {
+          data: {
+            contentVersionId: null,
+            platform,
+            output: result,
+            copyAllowed,
+            complianceStatus,
+            model: null,
+            usage: null,
+            requestId: null,
+          },
+          error: null,
+        },
         { status: 200, headers: h }
       );
     } catch (err) {
       if (err instanceof DeepSeekProviderError) {
-        if (err.code === "AI_REQUEST_ABORTED") {
-          throw err;
-        }
-
+        if (err.code === "AI_REQUEST_ABORTED") throw err;
         const mapped = mapProviderError(err);
         return jsonResponse(
           { data: null, error: mapped.body },
           { status: mapped.status, headers: h }
         );
       }
-
       return jsonResponse(
-        {
-          data: null,
-          error: { code: "INTERNAL_ERROR", message: "服务器错误" },
-        },
+        { data: null, error: { code: "INTERNAL_ERROR", message: "服务器错误" } },
         { status: 500, headers: h }
       );
     }
