@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, MapPin, Lock, Pencil } from "lucide-react";
 import { CoverImage, MediaGrid, MediaGridSkeleton } from "@/components/ui/media-grid";
 import { DeletePropertyButton } from "./delete-button";
+import { PropertyShareSection } from "@/features/collaboration/components/property-share-section";
 
 function DetailSkeleton() {
   return <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-3xl mx-auto animate-pulse space-y-6"><div className="h-6 bg-muted rounded w-32" /><div className="h-8 bg-muted rounded w-3/4" /><div className="h-4 bg-muted rounded w-1/2" /><div className="h-20 bg-muted rounded" /><div className="h-20 bg-muted rounded" /></div>;
@@ -95,13 +96,13 @@ async function PropertyDetailContent({ propertyId }: { propertyId: string }) {
       </section>
 
       {/* Sharing */}
-      <section className="rounded-lg border mb-6"><h2 className="font-semibold text-sm px-4 py-3 border-b">共享与营销</h2>
-        <div className="px-4 py-2">
-          <DetailRow label="共享库" value={property.is_shared ? "已上架" : "未上架"} />
-          <DetailRow label="营销复用授权" value={property.allow_marketing_reuse ? "已授权" : "未授权"} />
-          <DetailRow label="共享有效期" value={property.shared_expires_at} />
-        </div>
-      </section>
+      <PropertyShareSection
+        propertyId={property.id}
+        isShared={property.is_shared === true}
+        allowMarketingReuse={property.allow_marketing_reuse === true}
+        sharedExpiresAt={property.shared_expires_at ?? null}
+        commissionSplit={property.commission_split ?? null}
+      />
 
       {/* Media Gallery */}
       <section className="rounded-lg border mb-6">
