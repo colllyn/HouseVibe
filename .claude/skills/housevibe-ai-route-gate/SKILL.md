@@ -41,6 +41,7 @@ This gate verifies every AI API route under `src/app/api/ai/**/route.ts`. Curren
 
 - `POST /api/ai/parse-property-search` — P3-AI-004 (semantic_search entitlement)
 - `POST /api/ai/extract-property` — P3-AI-083 (ai_data_extraction entitlement)
+- `POST /api/ai/extract-client` — P3-AI-086 (ai_data_extraction entitlement)
 
 Each route uses its own precise entitlement, narrow DTO, and no shared prompt/retry logic.
 Future AI routes (e.g., P3-AI-005 Vision) must be added to this gate when implemented.
@@ -399,48 +400,55 @@ Every hit must be explained. Real skips in AI route paths must FAIL.
 
 Ask `quality-reviewer` to perform a final read-only review of:
 
-1. Route files: `src/app/api/ai/parse-property-search/route.ts`, `src/app/api/ai/extract-property/route.ts`
-2. Handlers: `src/lib/ai/routes/parse-property-search-handler.ts`, `src/lib/ai/routes/extract-property-handler.ts`
-3. Route tests: `src/app/api/ai/parse-property-search/__tests__/route.test.ts`, `src/app/api/ai/extract-property/__tests__/route.test.ts`
+1. Route files: `src/app/api/ai/parse-property-search/route.ts`, `src/app/api/ai/extract-property/route.ts`, `src/app/api/ai/extract-client/route.ts`
+2. Handlers: `src/lib/ai/routes/parse-property-search-handler.ts`, `src/lib/ai/routes/extract-property-handler.ts`, `src/lib/ai/routes/extract-client-handler.ts`
+3. Route tests: `src/app/api/ai/parse-property-search/__tests__/route.test.ts`, `src/app/api/ai/extract-property/__tests__/route.test.ts`, `src/app/api/ai/extract-client/__tests__/route.test.ts`
 4. AI types: `src/lib/ai/types.ts` (error types, provider interface, input/output DTOs)
-5. AI schemas: `src/lib/ai/schemas.ts` (PropertySearchFilterSchema, PropertyExtractionOutputSchema — strict checks)
+5. AI schemas: `src/lib/ai/schemas.ts` (PropertySearchFilterSchema, PropertyExtractionOutputSchema, ClientExtractionOutputSchema — strict checks)
+6. Privacy: `src/lib/ai/privacy/redact-client-input.ts` (client PII redaction)
 
 `data-security-engineer` must independently confirm:
-- 401/403/422 responses do NOT trigger text fallback
-- Client workspaceId is rejected by strict schema on both routes
-- No Service Role key in route code
-- No DEEPSEEK_API_KEY read in route code
-- No NEXT_PUBLIC_DEEPSEEK in route code
-- AI_REQUEST_ABORTED rethrows (no 499, no secondary response) on both routes
-- Search query / extraction text is not persisted to database
+- 401/403/422 responses do NOT trigger text fallback on all three routes
+- Client workspaceId is rejected by strict schema on all three routes
+- No Service Role key in route code on any route
+- No DEEPSEEK_API_KEY read in route code on any route
+- No NEXT_PUBLIC_DEEPSEEK in route code on any route
+- AI_REQUEST_ABORTED rethrows (no 499, no secondary response) on all three routes
+- Search query / extraction text is not persisted to database on any route
 - Error responses do not leak query, text, key, prompt, requestId, or upstreamStatus
 - Each route uses its own precise entitlement (semantic_search ≠ ai_data_extraction)
 - property_matching does not substitute for semantic_search
-- request.signal is forwarded to Provider on both routes
-- Provider does NOT receive workspaceId/userId from client on either route
+- request.signal is forwarded to Provider on all three routes
+- Provider does NOT receive workspaceId/userId from client on any route
+- extract-client route performs server-side PII redaction before Provider call
+- Client PII (phone, wechat, email, name, ID, passport) redacted deterministically
+- High-risk client input returns 422 with Provider call count = 0
+- extract-client Provider DTO is narrow (no userId, workspaceId, modelName, promptVersion)
 
 `quality-reviewer` must confirm:
 - P0 = 0, P1 = 0
 - Frontmatter is correct
 - `disable-model-invocation: true`
 - All contract sections are covered
-- Auth, workspace, entitlement checks present and in correct order on both routes
+- Auth, workspace, entitlement checks present and in correct order on all three routes
 - Each route uses its own distinct entitlement (no sharing)
-- Schema is strict (rejects extra fields) on both routes
-- Provider boundary is clean (no prompt/retry/model logic in either route)
+- Schema is strict (rejects extra fields) on all three routes
+- Provider boundary is clean (no prompt/retry/model logic in any route)
 - Error mapping matches contract
 - AI_REQUEST_ABORTED rethrows (not wrapped in Response)
 - Unknown errors → 500
 - No text fallback in any route
 - No database writes from any route
 - All tests use Mock Provider (no real DeepSeek calls)
-- request.signal forwarded on both routes
+- request.signal forwarded on all three routes
 - No shared or duplicated prompt/retry logic between routes
 - extract-property route performs server-side PII redaction before Provider call
-- Original text must not be sent directly to Provider for extraction
-- redactPropertyInput() is deterministic regex-based (no AI model involvement)
-- Tests prove Provider never receives raw PII (phone, email, ID, address, key location)
-- High-risk input (mostly PII after stripping) returns 422 with Provider call count = 0
+- extract-client route performs server-side PII redaction before Provider call
+- Original text must not be sent directly to Provider for extraction on either property or client route
+- redactPropertyInput() and redactClientInput() are deterministic regex-based (no AI model involvement)
+- Tests prove Provider never receives raw PII (phone, email, ID, address, key location on property; phone, email, wechat, name, ID, passport on client)
+- High-risk input (mostly PII after stripping) returns 422 with Provider call count = 0 on both extraction routes
+- Client redaction does not duplicate or drift from property redaction regex patterns
 
 ---
 
@@ -465,26 +473,30 @@ ALL of the following must be true:
 15. No DEEPSEEK_API_KEY direct read in route code
 16. No NEXT_PUBLIC_DEEPSEEK in route code
 17. AI_REQUEST_ABORTED rethrows (no 499, no Response)
-18. All 5 provider error codes mapped correctly to HTTP statuses
-19. Unknown errors map to 500
-20. Error responses do not leak sensitive data
-21. No text fallback in route code
+18. All 5 provider error codes mapped correctly to HTTP statuses on all routes
+19. Unknown errors map to 500 on all routes
+20. Error responses do not leak sensitive data on all routes
+21. No text fallback in route code on any route
 22. No database writes in any route
 23. All tests use Mock Provider (no real network calls)
 24. No skipped/todo tests in AI route tests
-25. request.signal forwarded to Provider on both routes
+25. request.signal forwarded to Provider on all three routes
 26. Each route uses distinct entitlement (no entitlement sharing)
 27. No shared prompt/retry/model logic between routes
 28. All 4 agents returned AGENT_READY
 29. Semantic Search Gate PASS
 30. AI Provider Gate PASS
+31. extract-client route has server-side PII redaction
+32. extract-client Provider DTO is narrow (no identity/workspace/config)
+33. High-risk client input fail closed (422, Provider calls = 0)
+34. Client redaction patterns aligned with property redaction (no drift)
 
 Any of the following MUST cause FAIL:
 
 - P0 > 0 or P1 > 0
 - Agent unavailable or timeout
 - Unit/Build failure or skipped tests
-- Missing auth, workspace, or entitlement check
+- Missing auth, workspace, or entitlement check on any route
 - Route uses Service Role
 - Route directly reads DeepSeek Key
 - Schema not using strict()
@@ -493,6 +505,10 @@ Any of the following MUST cause FAIL:
 - Real network calls in tests
 - Working tree has unaccounted `M` or `??` files
 - Text fallback in route code
+- Raw PII sent to Provider on either property or client route
+- Provider DTO contains userId, workspaceId, modelName, or promptVersion
+- High-risk input not rejected (must fail closed, Provider call count = 0)
+- Client redaction duplicates or drifts from property redaction regex patterns
 
 ---
 
