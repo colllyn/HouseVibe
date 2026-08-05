@@ -4,6 +4,11 @@
 // Security: Never prints API keys, prompts, query text, or raw responses
 // ============================================================
 
+import { loadEnvConfig } from "@next/env";
+
+// Load .env.local before reading any env vars (Next.js official loader)
+loadEnvConfig(process.cwd());
+
 import { createDeepSeekTextProvider } from "../src/lib/ai/providers/deepseek-text-provider";
 import { DeepSeekProviderError } from "../src/lib/ai/types";
 import type {
