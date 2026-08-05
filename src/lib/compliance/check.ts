@@ -351,7 +351,7 @@ function detectFactConflicts(
   // Rent check
   const actualRent = facts.monthlyRent;
   if (actualRent != null) {
-    const rentMatches = contentText.match(/(\d{3,5})\s*元?[\/每]月/g);
+    const rentMatches = contentText.match(/(\d{3,5})\s*元?[/每]月/g);
     if (rentMatches) {
       for (const m of rentMatches) {
         const num = parseInt(m.replace(/[^0-9]/g, ""), 10);

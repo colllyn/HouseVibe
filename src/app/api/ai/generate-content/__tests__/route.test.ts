@@ -55,14 +55,11 @@ function buildQueryBuilder(isPropertyQuery = false) {
   return chain;
 }
 
-let fromCallCount = 0;
 function buildSupabaseClient() {
-  fromCallCount = 0;
   return {
     client: {
       auth: { getUser: mockGetUser },
       from: (table: string) => {
-        fromCallCount++;
         return buildQueryBuilder(table === "properties");
       },
       rpc: mockRpc,

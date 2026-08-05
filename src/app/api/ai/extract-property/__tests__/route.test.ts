@@ -352,17 +352,18 @@ describe("POST /api/ai/extract-property", () => {
 
   // 14. Provider DTO does NOT contain userId, workspaceId, modelName, promptVersion
   it("14: provider DTO excludes identity and config", async () => {
-    let capturedInput: PropertyExtractionInput | null = null;
+    const captured: PropertyExtractionInput[] = [];
     const provider = makeMockProvider({
       extractProperty: async (input) => {
-        capturedInput = input;
+        captured.push(input);
         return DEFAULT_RESULT;
       },
     });
     const handler = createHandler(provider);
     await handler(makeRequest({ text: "天河区一房" }));
-    expect(capturedInput).not.toBeNull();
-    const input = capturedInput!;
+    expect(captured).toHaveLength(1);
+    const input = captured[0];
+    if (!input) throw new Error("expected captured input");
     // Provider DTO must NOT have identity/config fields
     expect(Object.keys(input)).not.toContain("userId");
     expect(Object.keys(input)).not.toContain("workspaceId");
@@ -587,10 +588,10 @@ describe("POST /api/ai/extract-property", () => {
   // --- PII Redaction Integration ---
 
   it("26: provider receives redacted text, not raw PII", async () => {
-    let capturedText: string | null = null;
+    const capturedTexts: string[] = [];
     const provider = makeMockProvider({
       extractProperty: async (input) => {
-        capturedText = input.text;
+        capturedTexts.push(input.text);
         return DEFAULT_RESULT;
       },
     });
@@ -600,20 +601,22 @@ describe("POST /api/ai/extract-property", () => {
         text: "天河区一房3500元，房东：张三，电话13812345678",
       })
     );
-    expect(capturedText).not.toBeNull();
-    expect(capturedText!).not.toContain("13812345678");
-    expect(capturedText!).not.toContain("张三");
-    expect(capturedText!).toContain("[REDACTED_PHONE]");
-    expect(capturedText!).toContain("[REDACTED_NAME]");
+    expect(capturedTexts).toHaveLength(1);
+    const text = capturedTexts[0];
+    if (!text) throw new Error("expected captured text");
+    expect(text).not.toContain("13812345678");
+    expect(text).not.toContain("张三");
+    expect(text).toContain("[REDACTED_PHONE]");
+    expect(text).toContain("[REDACTED_NAME]");
     // Property facts preserved
-    expect(capturedText!).toContain("3500");
+    expect(text).toContain("3500");
   });
 
   it("27: provider never receives raw PII from input", async () => {
-    let capturedText: string | null = null;
+    const capturedTexts2: string[] = [];
     const provider = makeMockProvider({
       extractProperty: async (input) => {
-        capturedText = input.text;
+        capturedTexts2.push(input.text);
         return DEFAULT_RESULT;
       },
     });
@@ -621,9 +624,12 @@ describe("POST /api/ai/extract-property", () => {
     const rawText =
       "微信：owner123 邮箱：owner@mail.com 身份证：440106199001011234";
     await handler(makeRequest({ text: rawText }));
-    expect(capturedText!).not.toContain("owner123");
-    expect(capturedText!).not.toContain("owner@mail.com");
-    expect(capturedText!).not.toContain("440106199001011234");
+    expect(capturedTexts2).toHaveLength(1);
+    const safeText = capturedTexts2[0];
+    if (!safeText) throw new Error("expected captured text");
+    expect(safeText).not.toContain("owner123");
+    expect(safeText).not.toContain("owner@mail.com");
+    expect(safeText).not.toContain("440106199001011234");
   });
 
   it("28: high-risk input (mostly PII) → 422, Provider call count = 0", async () => {

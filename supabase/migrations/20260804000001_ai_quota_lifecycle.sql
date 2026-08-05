@@ -39,8 +39,8 @@ create table if not exists public.ai_user_limits (
   id uuid primary key default extensions.gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   feature text not null,
-  daily_request_limit integer not null check (daily_request_limit >= 0),
-  daily_cost_limit_usd numeric not null check (daily_cost_limit_usd >= 0),
+  daily_request_limit integer check (daily_request_limit >= 0),
+  daily_cost_limit_usd numeric check (daily_cost_limit_usd >= 0),
   status text not null default 'active' check (status in ('active', 'blocked')),
   blocked_at timestamptz,
   blocked_reason text,
@@ -118,17 +118,17 @@ alter table public.ai_usage_logs enable row level security;
 alter table public.ai_user_limits enable row level security;
 alter table public.ai_model_pricing enable row level security;
 
--- ai_usage_logs: users can read their own records
+-- ai_usage_logs: users can read own records; system admins can read all
 create policy "Users can read own usage logs"
   on public.ai_usage_logs
   for select
-  using (user_id = (select auth.uid()));
+  using (user_id = (select auth.uid()) or private.is_system_admin());
 
--- ai_user_limits: users can read their own limits
+-- ai_user_limits: users can read own limits; system admins can read all
 create policy "Users can read own limits"
   on public.ai_user_limits
   for select
-  using (user_id = (select auth.uid()));
+  using (user_id = (select auth.uid()) or private.is_system_admin());
 
 -- ai_model_pricing: authenticated users can read pricing
 create policy "Authenticated users can read model pricing"
@@ -204,14 +204,18 @@ begin
     raise exception 'No active workspace membership' using errcode = '42501';
   end if;
 
-  -- 3. Check for existing idempotency_key
+  -- 3. Check for existing idempotency_key (contract §4.2: only succeeded or reserved-not-expired)
   if p_idempotency_key is not null then
     select id, status, reserved_estimated_cost_usd, quota_units
     into v_existing_record
     from public.ai_usage_logs
     where user_id = p_user_id
       and feature = p_feature
-      and idempotency_key = p_idempotency_key;
+      and idempotency_key = p_idempotency_key
+      and (
+        status = 'succeeded'
+        or (status = 'reserved' and (reservation_expires_at is null or reservation_expires_at > now()))
+      );
 
     if found then
       return jsonb_build_object(
@@ -444,7 +448,7 @@ begin
     raise exception 'Workspace mismatch' using errcode = '42501';
   end if;
 
-  -- 6. State machine enforcement
+  -- 6. State machine enforcement: only 'reserved' can be settled
   if v_existing.status in ('succeeded', 'failed', 'rejected_compliance') then
     -- Already settled: idempotent return
     return jsonb_build_object(
@@ -456,8 +460,9 @@ begin
     );
   end if;
 
-  if v_existing.status = 'released' then
-    raise exception 'Cannot settle a released reservation' using errcode = '22023';
+  if v_existing.status != 'reserved' then
+    raise exception 'Cannot settle a record with status: %', v_existing.status
+      using errcode = '22023';
   end if;
 
   -- 7. Update to settled status with actual usage

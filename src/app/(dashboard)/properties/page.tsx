@@ -170,7 +170,8 @@ function PropertiesContent() {
         if (!v) { merged.delete(k); continue; }
         if (arrayParamNames.has(k)) {
           if (!arrayValues.has(k)) arrayValues.set(k, []);
-          arrayValues.get(k)!.push(v);
+          const arr = arrayValues.get(k);
+          if (arr) arr.push(v);
         } else {
           merged.set(k, v);
         }
