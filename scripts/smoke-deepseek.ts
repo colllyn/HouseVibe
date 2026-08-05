@@ -198,22 +198,23 @@ async function run(): Promise<void> {
       contentGoal: "获取咨询",
     });
 
-    if (result.platform !== "xiaohongshu") {
-      return { passed: false, details: `Expected xiaohongshu, got ${result.platform}` };
+    const content = result.output;
+    if (content.platform !== "xiaohongshu") {
+      return { passed: false, details: `Expected xiaohongshu, got ${content.platform}` };
     }
     // Validate key fields exist
     const checks: string[] = [];
-    if (!result.titleOptions || result.titleOptions.length === 0) checks.push("titleOptions empty");
-    if (!result.hook || result.hook.trim() === "") checks.push("hook empty");
-    if (!result.body || result.body.trim() === "") checks.push("body empty");
-    if (!result.hashtags || result.hashtags.length === 0) checks.push("hashtags empty");
-    if (!result.factualSummary) checks.push("factualSummary missing");
+    if (!content.titleOptions || content.titleOptions.length === 0) checks.push("titleOptions empty");
+    if (!content.hook || content.hook.trim() === "") checks.push("hook empty");
+    if (!content.body || content.body.trim() === "") checks.push("body empty");
+    if (!content.hashtags || content.hashtags.length === 0) checks.push("hashtags empty");
+    if (!content.factualSummary) checks.push("factualSummary missing");
     if (checks.length > 0) {
       return { passed: false, details: checks.join("; ") };
     }
     return {
       passed: true,
-      details: `platform=xiaohongshu, titles=${result.titleOptions.length}, hashtags=${result.hashtags.length}, factReview=${result.requiresFactReview}`,
+      details: `platform=xiaohongshu, titles=${content.titleOptions.length}, hashtags=${content.hashtags.length}, factReview=${content.requiresFactReview}, model=${result.model}, tokens=${result.usage.inputTokens}+${result.usage.outputTokens}`,
     };
   });
 

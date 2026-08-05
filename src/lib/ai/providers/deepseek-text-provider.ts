@@ -18,6 +18,7 @@ import {
   type PropertySearchFilters,
   type ContentGenerationInput,
   type GeneratedContent,
+  type GenerateContentResult,
   type AIUsage,
 } from "../types";
 import {
@@ -126,7 +127,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
     signal?: AbortSignal
   ): Promise<PropertyExtractionResult> {
     const prompt = buildExtractPropertyPrompt(input.text, input.sourceType);
-    const raw = await this.callWithRetry(
+    const { parsed: raw } = await this.callWithRetry(
       input.requestId,
       "extractProperty",
       prompt,
@@ -141,7 +142,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
     signal?: AbortSignal
   ): Promise<ClientExtractionResult> {
     const prompt = buildExtractClientPrompt(input.text, input.sourcePlatform);
-    const raw = await this.callWithRetry(
+    const { parsed: raw } = await this.callWithRetry(
       input.requestId,
       "extractClient",
       prompt,
@@ -156,7 +157,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
     signal?: AbortSignal
   ): Promise<PropertySearchFilters> {
     const prompt = buildParsePropertySearchPrompt(input.query);
-    const raw = await this.callWithRetry(
+    const { parsed: raw } = await this.callWithRetry(
       input.requestId,
       "parsePropertySearch",
       prompt,
@@ -173,17 +174,22 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
   async generateContent(
     input: ContentGenerationInput,
     signal?: AbortSignal
-  ): Promise<GeneratedContent> {
+  ): Promise<GenerateContentResult> {
     const prompt = buildGenerateContentPrompt(input);
-    const raw = await this.callWithRetry(
+    const { parsed, usage, model } = await this.callWithRetry(
       input.requestId,
       "generateContent",
       prompt,
       MAX_TOKENS.generateContent,
       signal
     );
-    const result = validateAndTransform(raw, ContentGenerationOutputSchema, "generateContent", input.requestId);
-    return result as GeneratedContent;
+    const output = validateAndTransform(parsed, ContentGenerationOutputSchema, "generateContent", input.requestId) as GeneratedContent;
+    return {
+      output,
+      usage: usage ?? { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 },
+      model,
+      requestId: input.requestId,
+    };
   }
 
   // --- Core retry/request logic ---
@@ -194,7 +200,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
     prompt: string,
     maxTokens: number,
     signal?: AbortSignal
-  ): Promise<unknown> {
+  ): Promise<{ parsed: unknown; usage: AIUsage | undefined; model: string }> {
     const env = validateConfig(requestId, this.configOverride);
     const systemPrompt = getSystemPrompt(capability);
 
@@ -229,7 +235,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
         );
 
         const durationMs = Date.now() - startTime;
-        // On success, parse and return
+        // On success, parse and return with metadata
         const parsed = parseResponseJson(result.content, result.finishReason, requestId, attempt > 0);
         // Log success (structured, no sensitive data)
         logStructured({
@@ -241,7 +247,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
           inputTokens: result.usage?.inputTokens,
           outputTokens: result.usage?.outputTokens,
         });
-        return parsed;
+        return { parsed, usage: result.usage, model: currentModel };
       } catch (err) {
         const durationMs = Date.now() - startTime;
 

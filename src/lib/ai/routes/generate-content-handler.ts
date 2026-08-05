@@ -6,13 +6,11 @@
  *
  * Contract: docs/contracts/ai-contract.md v2.0 §2.2, §16
  *           docs/contracts/api-contract.md §10.6
+ *           docs/contracts/compliance-and-audit-contract.md §4
  *
  * Pipeline: Auth → Workspace → Entitlement → Schema → Load Property →
- *           Quota Reserve → PII Redact → Provider → Fact Verify →
- *           Compliance Scan → Usage Settle → Envelope
- *
- * Dependencies: P3-AI-014 (quota RPC), P3-AI-010 (compliance module).
- * These steps are structural; full enforcement activates when dependencies land.
+ *           Atomic Reserve → PII Redact → Provider → Fact Verify →
+ *           Compliance Scan → Settle/Release → Envelope
  */
 
 import { type NextRequest } from "next/server";
@@ -23,11 +21,14 @@ import { createDeepSeekTextProvider } from "@/lib/ai/providers/deepseek-text-pro
 import { DeepSeekProviderError } from "@/lib/ai/types";
 import { redactPropertyInput } from "@/lib/ai/privacy/redact-property-input";
 import { checkCompliance, toResponseStatus } from "@/lib/compliance/check";
+import { getServerEnv } from "@/config/env";
 import type {
   DeepSeekTextProvider,
   ContentGenerationInput,
   GeneratedContent,
+  GenerateContentResult,
   RedactedPropertyFacts,
+  AIUsage,
 } from "@/lib/ai/types";
 
 // ============================================================
@@ -51,8 +52,24 @@ const GenerateContentRequestSchema = z
   .strict();
 
 // ============================================================
-// Response shape per §10.6: complianceStatus is "clean"|"review"|"blocked"
+// Quota reserve result shape
 // ============================================================
+
+interface QuotaReserveResult {
+  success: boolean;
+  already_reserved?: boolean;
+  reservation_id?: string;
+  status?: string;
+  limit_reason?: string | null;
+  remaining_requests?: number;
+  remaining_cost_usd?: number;
+  daily_limit?: number;
+  daily_cost_limit_usd?: number;
+  used_requests?: number;
+  used_cost_usd?: number;
+  reservation_expires_at?: string;
+  quota_date?: string;
+}
 
 // ============================================================
 // DB property row Zod schema — validates Supabase query result
@@ -179,10 +196,6 @@ function dbPropertyToRedactedFacts(p: DbPropertyRow): RedactedPropertyFacts {
   };
 }
 
-// ============================================================
-// Helpers
-// ============================================================
-
 /**
  * Extract all scannable text from a GeneratedContent result for compliance checking.
  */
@@ -206,6 +219,19 @@ function extractScanText(result: GeneratedContent, platform: string): string {
   return parts.join("\n");
 }
 
+/**
+ * Calculate estimated cost for a request based on max tokens and pricing.
+ * Uses conservative estimate: the full max_tokens budget for output.
+ */
+function estimateCost(maxTokens: number): { estimatedCostUsd: number; estimatedTokens: number } {
+  // Conservative: assume max output tokens as a rough capacity estimate
+  const estimatedTokens = maxTokens;
+  // ~$0.00219/1k output (deepseek-v4-pro pricing) — conservative for reserve
+  const outputPricePer1k = 0.00219;
+  const estimatedCostUsd = (estimatedTokens * outputPricePer1k) / 1000;
+  return { estimatedCostUsd, estimatedTokens };
+}
+
 // ============================================================
 // Handler Factory
 // ============================================================
@@ -224,14 +250,26 @@ export function createGenerateContentHandler(
 
     const { client, jsonResponse } = await createRouteHandlerClient(request);
 
+    // ============================================================
+    // Helper: Build error envelope
+    // ============================================================
+    function errorResponse(code: string, message: string, status: number, details?: Record<string, unknown>) {
+      return jsonResponse(
+        { data: null, error: { code, message, ...(details ? { details } : {}) } },
+        { status, headers: h }
+      );
+    }
+
+    let reservationId: string | null = null;
+    let _idempotencyKey: string | null = null;
+    let _userId: string | null = null;
+    let _workspaceId: string | null = null;
+
     try {
       // Step 1: Authentication
       const { data: { user } } = await client.auth.getUser();
       if (!user) {
-        return jsonResponse(
-          { data: null, error: { code: "UNAUTHENTICATED", message: "未登录" } },
-          { status: 401, headers: h }
-        );
+        return errorResponse("UNAUTHENTICATED", "未登录", 401);
       }
 
       // Step 2: Workspace membership
@@ -244,52 +282,40 @@ export function createGenerateContentHandler(
         .single();
 
       if (!member) {
-        return jsonResponse(
-          { data: null, error: { code: "WORKSPACE_ACCESS_DENIED", message: "无工作区权限" } },
-          { status: 403, headers: h }
-        );
+        return errorResponse("WORKSPACE_ACCESS_DENIED", "无工作区权限", 403);
       }
 
       const workspaceId: string = member.workspace_id;
+      _userId = user.id;
+      _workspaceId = workspaceId;
 
       // Step 2b: Entitlement — content_factory
       const entitled = await hasFeature("content_factory");
       if (!entitled) {
-        return jsonResponse(
-          { data: null, error: { code: "CONTENT_FACTORY_NOT_ALLOWED", message: "需要 content_factory 功能授权" } },
-          { status: 403, headers: h }
-        );
+        return errorResponse("CONTENT_FACTORY_NOT_ALLOWED", "需要 content_factory 功能授权", 403);
       }
 
       // Step 2c: Content-Type validation
       const contentType = request.headers.get("content-type") ?? "";
       if (!contentType.includes("application/json")) {
-        return jsonResponse(
-          { data: null, error: { code: "VALIDATION_FAILED", message: "请求格式必须为 JSON" } },
-          { status: 422, headers: h }
-        );
+        return errorResponse("VALIDATION_FAILED", "请求格式必须为 JSON", 422);
       }
 
       // Step 2d: Body parsing
       let body: unknown;
       try { body = await request.json(); } catch {
-        return jsonResponse(
-          { data: null, error: { code: "VALIDATION_FAILED", message: "请求体不是有效的 JSON" } },
-          { status: 422, headers: h }
-        );
+        return errorResponse("VALIDATION_FAILED", "请求体不是有效的 JSON", 422);
       }
 
       const parsed = GenerateContentRequestSchema.safeParse(body);
       if (!parsed.success) {
         const first = parsed.error.issues[0];
         const msg = first ? `${first.path.join(".")}: ${first.message}` : "请求参数无效";
-        return jsonResponse(
-          { data: null, error: { code: "VALIDATION_FAILED", message: msg } },
-          { status: 422, headers: h }
-        );
+        return errorResponse("VALIDATION_FAILED", msg, 422);
       }
 
       const { propertyId, platform, idempotencyKey, ...contentOptions } = parsed.data;
+      _idempotencyKey = idempotencyKey;
 
       // Step 3: Load property from DB — verify ownership + marketing_reuse
       const { data: property, error: propErr } = await client
@@ -300,10 +326,7 @@ export function createGenerateContentHandler(
         .single();
 
       if (propErr || !property) {
-        return jsonResponse(
-          { data: null, error: { code: "RESOURCE_NOT_FOUND", message: "房源不存在" } },
-          { status: 404, headers: h }
-        );
+        return errorResponse("RESOURCE_NOT_FOUND", "房源不存在", 404);
       }
 
       const p = DbPropertyRowSchema.parse(property);
@@ -312,37 +335,98 @@ export function createGenerateContentHandler(
       const isOwn = p.workspace_id === workspaceId;
       const isReusable = p.is_shared && p.allow_marketing_reuse;
       if (!isOwn && !isReusable) {
-        return jsonResponse(
-          { data: null, error: { code: "PROPERTY_NOT_MARKETING_REUSABLE", message: "房源未授权营销复用" } },
-          { status: 403, headers: h }
-        );
+        return errorResponse("PROPERTY_NOT_MARKETING_REUSABLE", "房源未授权营销复用", 403);
       }
 
-      // Step 4: Atomic quota reservation (P3-AI-014 — structural; enforced when RPC lands)
-      // In test mock: RPC returns success. In production without RPC: returns structured error.
-      const { error: quotaErr } = await client.rpc("reserve_ai_quota", {
-        _user_id: user.id,
-        _feature: "content_factory",
-        _estimated_tokens: 4096,
-        _idempotency_key: idempotencyKey,
+      // ============================================================
+      // Step 4: Atomic quota reservation (P3-AI-014 — full lifecycle)
+      // ============================================================
+      const env = getServerEnv();
+      const maxTokens = 4096; // generateContent max_tokens per contract §11.3
+      const { estimatedCostUsd } = estimateCost(maxTokens);
+      const requestId = crypto.randomUUID();
+      // Let RPC determine quota_date in AI_QUOTA_TIMEZONE (Asia/Shanghai)
+      // per PRD §10.9; p_quota_date omitted so RPC uses its timezone-aware default
+
+      const { data: quotaData, error: quotaErr } = await client.rpc("reserve_ai_quota", {
+        p_user_id: user.id,
+        p_workspace_id: workspaceId,
+        p_feature: "content_factory",
+        p_capability: "text_generation",
+        p_request_limit: env.AI_DAILY_CONTENT_LIMIT,
+        p_daily_cost_limit_usd: env.AI_DAILY_COST_LIMIT_USD,
+        p_reserved_estimated_cost_usd: estimatedCostUsd,
+        p_idempotency_key: idempotencyKey,
+        p_request_id: requestId,
       });
 
       if (quotaErr) {
-        return jsonResponse(
-          { data: null, error: { code: "QUOTA_EXCEEDED", message: "AI 配额已用完，请明天再试" } },
-          { status: 429, headers: h }
+        return errorResponse("QUOTA_EXCEEDED", "AI 配额检查失败，请重试", 429);
+      }
+
+      const reserveResult = quotaData as unknown as QuotaReserveResult;
+
+      if (!reserveResult.success) {
+        const reason = reserveResult.limit_reason;
+        if (reason === "cost_limit") {
+          return errorResponse(
+            "COST_LIMIT_EXCEEDED",
+            `AI 每日成本已达上限（$${reserveResult.used_cost_usd?.toFixed(2) ?? "?"} / $${reserveResult.daily_cost_limit_usd ?? "?"}），请明天再试`,
+            429,
+            {
+              dailyCostLimitUsd: reserveResult.daily_cost_limit_usd,
+              usedCostUsd: reserveResult.used_cost_usd,
+              remainingCostUsd: reserveResult.remaining_cost_usd,
+            }
+          );
+        }
+        // request_limit or blocked
+        return errorResponse(
+          "QUOTA_EXCEEDED",
+          `今日内容生成次数已用完（${reserveResult.used_requests ?? "?"}/${reserveResult.daily_limit ?? "?"}），请明天再试`,
+          429,
+          {
+            dailyLimit: reserveResult.daily_limit,
+            used: reserveResult.used_requests,
+            remaining: reserveResult.remaining_requests,
+            resetAt: reserveResult.quota_date
+              ? `${reserveResult.quota_date}T00:00:00+08:00`
+              : undefined,
+          }
         );
       }
 
+      reservationId = reserveResult.reservation_id ?? null;
+
+      // If already reserved (idempotency replay), the Provider call was already made.
+      // Per contract §1.4: same idempotencyKey returns same result without re-calling Provider.
+      // We cannot replay the content, so return a conflict indicating the resource state.
+      if (reserveResult.already_reserved) {
+        return errorResponse(
+          "CONFLICT",
+          "相同 idempotencyKey 的请求已存在，请使用新的 Key 重试",
+          409
+        );
+      }
+
+      // ============================================================
       // Step 5: Privacy — redact DB-loaded property free-text fields
+      // ============================================================
       const facts = dbPropertyToRedactedFacts(p);
       if (facts.description) {
         const redaction = redactPropertyInput(facts.description);
         if (!redaction.safeToSend) {
-          return jsonResponse(
-            { data: null, error: { code: "COMPLIANCE_BLOCKED", message: "房源描述包含过多隐私信息，内容生成被拒绝" } },
-            { status: 422, headers: h }
-          );
+          // Release quota before returning — input rejection is permanent, no retry
+          if (reservationId) {
+            await client.rpc("release_ai_quota", {
+              p_user_id: user.id,
+              p_workspace_id: workspaceId,
+              p_idempotency_key: idempotencyKey,
+              p_reason: "compliance_blocked_input",
+            });
+            reservationId = null;
+          }
+          return errorResponse("COMPLIANCE_BLOCKED", "房源描述包含过多隐私信息，内容生成被拒绝", 422);
         }
         facts.description = redaction.redactedText;
       }
@@ -351,10 +435,12 @@ export function createGenerateContentHandler(
         facts.addressText = redaction.safeToSend ? redaction.redactedText : undefined;
       }
 
+      // ============================================================
       // Step 6: Model call — narrow DTO, no identity
+      // ============================================================
       const provider = getProvider();
       const providerInput: ContentGenerationInput = {
-        requestId: crypto.randomUUID(),
+        requestId,
         promptVersion: "1.0.0",
         modelName: "",
         platform,
@@ -362,14 +448,36 @@ export function createGenerateContentHandler(
         ...contentOptions,
       };
 
-      const result = await provider.generateContent(providerInput, request.signal);
+      let providerResult: GenerateContentResult;
+      try {
+        providerResult = await provider.generateContent(providerInput, request.signal);
+      } catch (providerErr) {
+        // Provider failed — release the reserved quota (no usage consumed)
+        if (reservationId) {
+          try {
+            await client.rpc("release_ai_quota", {
+              p_user_id: user.id,
+              p_workspace_id: workspaceId,
+              p_idempotency_key: idempotencyKey,
+              p_reason: "provider_error",
+            });
+          } catch { /* best-effort release */ }
+          reservationId = null;
+        }
+        throw providerErr;
+      }
 
+      const { output: result, usage: providerUsage, model: providerModel } = providerResult;
+
+      // ============================================================
       // Step 7: Structured Output — validated by Provider (ContentGenerationOutputSchema)
-
       // Step 8: Fact verification (P3-AI-009 — structural)
+      // ============================================================
       const requiresFactReview = result.requiresFactReview ?? false;
 
+      // ============================================================
       // Step 9: Compliance scan (P3-AI-010 — deterministic, no AI/network/DB)
+      // ============================================================
       const contentText = extractScanText(result, platform);
       const compliance = checkCompliance({
         contentText,
@@ -388,8 +496,40 @@ export function createGenerateContentHandler(
       const complianceStatus = toResponseStatus(compliance.status);
       const copyAllowed = !requiresFactReview && compliance.copyAllowed;
 
-      // Step 10: Usage settlement — deferred (P3-AI-014)
-      // Success envelope — §10.6 full shape
+      // ============================================================
+      // Step 10: Settle usage with actual token/cost data
+      // ============================================================
+      const settleStatus = complianceStatus === "blocked" ? "rejected_compliance" : "succeeded";
+      const actualUsage: AIUsage = {
+        inputTokens: providerUsage.inputTokens,
+        outputTokens: providerUsage.outputTokens,
+        estimatedCostUsd: providerUsage.estimatedCostUsd,
+      };
+
+      if (reservationId) {
+        const { error: settleErr } = await client.rpc("settle_ai_quota", {
+          p_user_id: user.id,
+          p_workspace_id: workspaceId,
+          p_idempotency_key: idempotencyKey,
+          p_status: settleStatus,
+          p_input_tokens: actualUsage.inputTokens,
+          p_output_tokens: actualUsage.outputTokens,
+          p_actual_cost_usd: actualUsage.estimatedCostUsd,
+          p_model: providerModel,
+          p_request_id: requestId,
+          p_compliance_flags: complianceStatus !== "clean" ? { complianceStatus } : null,
+        });
+
+        if (settleErr) {
+          // Log but don't fail — settlement is best-effort for succeeded requests
+          console.error("[quota] settle failed:", settleErr);
+        }
+        reservationId = null;
+      }
+
+      // ============================================================
+      // Success envelope — §10.6 full shape with real usage/model/requestId
+      // ============================================================
       return jsonResponse(
         {
           data: {
@@ -398,15 +538,33 @@ export function createGenerateContentHandler(
             output: result,
             copyAllowed,
             complianceStatus,
-            model: null,
-            usage: null,
-            requestId: null,
+            model: providerModel || null,
+            usage: actualUsage.inputTokens > 0 || actualUsage.outputTokens > 0
+              ? {
+                  inputTokens: actualUsage.inputTokens,
+                  outputTokens: actualUsage.outputTokens,
+                  estimatedCostUsd: actualUsage.estimatedCostUsd,
+                }
+              : null,
+            requestId,
           },
           error: null,
         },
         { status: 200, headers: h }
       );
     } catch (err) {
+      // Release reservation on any unhandled error path
+      if (reservationId && _idempotencyKey && _userId && _workspaceId) {
+        try {
+          await client.rpc("release_ai_quota", {
+            p_user_id: _userId,
+            p_workspace_id: _workspaceId,
+            p_idempotency_key: _idempotencyKey,
+            p_reason: "error_release",
+          });
+        } catch { /* best-effort release */ }
+      }
+
       if (err instanceof DeepSeekProviderError) {
         if (err.code === "AI_REQUEST_ABORTED") throw err;
         const mapped = mapProviderError(err);

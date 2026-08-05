@@ -13,6 +13,7 @@ import type {
   DeepSeekTextProvider,
   ContentGenerationInput,
   GeneratedContent,
+  GenerateContentResult,
 } from "@/lib/ai/types";
 
 // ============================================================
@@ -86,6 +87,24 @@ vi.mock("@/lib/supabase/route-handler", () => ({
 
 vi.mock("@/features/access-control/guards", () => ({
   hasFeature: mockHasFeature,
+}));
+
+vi.mock("@/config/env", () => ({
+  getServerEnv: () => ({
+    DEEPSEEK_API_KEY: undefined,
+    DEEPSEEK_BASE_URL: undefined,
+    DEEPSEEK_MODEL: "deepseek-v4-flash",
+    DEEPSEEK_FALLBACK_MODEL: "deepseek-v4-pro",
+    DEEPSEEK_REQUEST_TIMEOUT_MS: 45000,
+    DEEPSEEK_VISION_BASE_URL_PRIMARY: undefined,
+    DEEPSEEK_VISION_BASE_URL_FALLBACK: undefined,
+    DEEPSEEK_VISION_API_KEY: undefined,
+    AI_DAILY_CONTENT_LIMIT: 10,
+    AI_DAILY_COST_LIMIT_USD: 10.0,
+    AI_QUOTA_TIMEZONE: "Asia/Shanghai",
+    SUPABASE_URL: "http://localhost:54321",
+    SUPABASE_ANON_KEY: "mock-anon-key",
+  }),
 }));
 
 // ============================================================
@@ -169,7 +188,7 @@ function setupMarketingReuseBlocked() {
   });
 }
 
-const DEFAULT_RESULT: GeneratedContent = {
+const DEFAULT_CONTENT: GeneratedContent = {
   platform: "xiaohongshu" as const,
   titleOptions: ["天河温馨一房 | 3500近地铁"],
   coverText: "天河区精装修一房",
@@ -189,11 +208,18 @@ const DEFAULT_RESULT: GeneratedContent = {
   requiresFactReview: false,
 };
 
+const DEFAULT_RESULT: GenerateContentResult = {
+  output: DEFAULT_CONTENT,
+  usage: { inputTokens: 1200, outputTokens: 800, estimatedCostUsd: 0.002 },
+  model: "deepseek-v4-flash",
+  requestId: "mock-request-id",
+};
+
 function makeMockProvider(overrides?: {
   generateContent?: (
     input: ContentGenerationInput,
     signal?: AbortSignal
-  ) => Promise<GeneratedContent>;
+  ) => Promise<GenerateContentResult>;
 }): DeepSeekTextProvider {
   return {
     extractProperty: async () => { throw new Error("not implemented"); },
@@ -249,7 +275,11 @@ describe("POST /api/ai/generate-content", () => {
     setupAuth();
     setEntitlement(true);
     setupProperty();
-    mockRpc.mockResolvedValue({ data: { success: true }, error: null });
+    // Default: reserve succeeds with reservation_id, settle/release succeed
+    mockRpc.mockResolvedValue({
+      data: { success: true, reservation_id: "res-001", already_reserved: false },
+      error: null,
+    });
   });
 
   // 1. Unauthenticated → 401
@@ -404,7 +434,20 @@ describe("POST /api/ai/generate-content", () => {
   // 15. Quota exceeded → 429
   it("15: quota exceeded → 429, provider call=0", async () => {
     let callCount = 0;
-    mockRpc.mockResolvedValue({ data: null, error: { code: "QUOTA", message: "exceeded" } });
+    mockRpc.mockResolvedValue({
+      data: {
+        success: false,
+        limit_reason: "request_limit",
+        remaining_requests: 0,
+        daily_limit: 10,
+        used_requests: 10,
+        used_cost_usd: 0,
+        remaining_cost_usd: 10,
+        daily_cost_limit_usd: 10,
+        quota_date: "2026-08-05",
+      },
+      error: null,
+    });
     const provider = makeMockProvider({
       generateContent: async () => { callCount++; return DEFAULT_RESULT; },
     });
@@ -513,7 +556,10 @@ describe("POST /api/ai/generate-content", () => {
   // 22. copyAllowed reflects requiresFactReview + compliance
   it("22: requiresFactReview=true → copyAllowed=false", async () => {
     const provider = makeMockProvider({
-      generateContent: async () => ({ ...DEFAULT_RESULT, requiresFactReview: true }),
+      generateContent: async () => ({
+        ...DEFAULT_RESULT,
+        output: { ...DEFAULT_RESULT.output, requiresFactReview: true },
+      }),
     });
     const handler = createHandler(provider);
     const res = await handler(makeRequest(validBody()));
@@ -529,7 +575,7 @@ describe("POST /api/ai/generate-content", () => {
     const provider = makeMockProvider({
       generateContent: async () => ({
         ...DEFAULT_RESULT,
-        body: "最好的房子保证升值电话13800138000",
+        output: { ...DEFAULT_RESULT.output, body: "最好的房子保证升值电话13800138000" },
       }),
     });
     const handler = createHandler(provider);
@@ -546,23 +592,28 @@ describe("POST /api/ai/generate-content", () => {
   it("22b: douyin platform → compliance scans douyin fields", async () => {
     const provider = makeMockProvider({
       generateContent: async () => ({
-        platform: "douyin" as const,
-        hookOptions: ["超值好房"],
-        coverText: "好房出租",
-        fullVoiceover: "这是全广州最好的房子，保证升值",
-        shots: [],
-        subtitles: "",
-        caption: "",
-        commentCta: "私信我",
-        privateMessageKeyword: "租房",
-        hashtags: [],
-        missingShots: [],
-        factsUsed: [],
-        visualFactsUsed: [],
-        missingInformation: [],
-        riskFlags: [],
-        complianceFlags: [],
-        requiresFactReview: false,
+        output: {
+          platform: "douyin" as const,
+          hookOptions: ["超值好房"],
+          coverText: "好房出租",
+          fullVoiceover: "这是全广州最好的房子，保证升值",
+          shots: [],
+          subtitles: "",
+          caption: "",
+          commentCta: "私信我",
+          privateMessageKeyword: "租房",
+          hashtags: [],
+          missingShots: [],
+          factsUsed: [],
+          visualFactsUsed: [],
+          missingInformation: [],
+          riskFlags: [],
+          complianceFlags: [],
+          requiresFactReview: false,
+        },
+        usage: { inputTokens: 800, outputTokens: 600, estimatedCostUsd: 0.001 },
+        model: "deepseek-v4-flash",
+        requestId: "mock-request-id",
       }),
     });
     const handler = createHandler(provider);

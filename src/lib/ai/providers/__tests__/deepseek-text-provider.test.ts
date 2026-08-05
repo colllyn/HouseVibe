@@ -7,7 +7,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createDeepSeekTextProvider } from "../deepseek-text-provider";
 import { DeepSeekProviderError } from "../../types";
-import type { XiaohongshuOutput } from "../../types";
+
 
 // ============================================================
 // Test Helpers
@@ -1056,13 +1056,14 @@ describe("DeepSeekTextProvider", () => {
       });
 
       // Use discriminated union check
-      expect(result.platform).toBe("xiaohongshu");
-      const xhs = result as XiaohongshuOutput;
-      expect(xhs.titleOptions).toHaveLength(1);
-      expect(xhs.hook).toBeTruthy();
-      expect(xhs.body).toBeTruthy();
-      expect(xhs.hashtags).toBeDefined();
-      expect(xhs.requiresFactReview).toBe(false);
+      const content = result.output;
+      expect(content.platform).toBe("xiaohongshu");
+      if (content.platform !== "xiaohongshu") throw new Error("wrong platform");
+      expect(content.titleOptions).toHaveLength(1);
+      expect(content.hook).toBeTruthy();
+      expect(content.body).toBeTruthy();
+      expect(content.hashtags).toBeDefined();
+      expect(content.requiresFactReview).toBe(false);
     });
   });
 
@@ -1350,23 +1351,24 @@ describe("DeepSeekTextProvider", () => {
         },
       });
 
-      expect(result.platform).toBe("xiaohongshu");
-      if (result.platform !== "xiaohongshu") throw new Error("wrong platform");
-      expect(result.titleOptions).toHaveLength(1);
-      expect(result.factualSummary).toBeTruthy();
-      expect(result.imageSequence).toHaveLength(1);
-      expect(result.imageSequence[0]).toEqual({
+      const content = result.output;
+      expect(content.platform).toBe("xiaohongshu");
+      if (content.platform !== "xiaohongshu") throw new Error("wrong platform");
+      expect(content.titleOptions).toHaveLength(1);
+      expect(content.factualSummary).toBeTruthy();
+      expect(content.imageSequence).toHaveLength(1);
+      expect(content.imageSequence[0]).toEqual({
         order: 1,
         description: "客厅全景",
         suggestedMediaType: "photo",
       });
-      expect(result.factsUsed[0]).toEqual({
+      expect(content.factsUsed[0]).toEqual({
         field: "district",
         value: "天河区",
       });
-      expect(result.riskFlags).toEqual([]);
-      expect(result.complianceFlags).toEqual([]);
-      expect(result.requiresFactReview).toBe(false);
+      expect(content.riskFlags).toEqual([]);
+      expect(content.complianceFlags).toEqual([]);
+      expect(content.requiresFactReview).toBe(false);
     });
 
     it("P3-075-8: string instead of imageSequence object → rejected", async () => {
@@ -1714,16 +1716,17 @@ describe("DeepSeekTextProvider", () => {
         propertyFacts: { title: "test", district: "天河区" },
       });
 
-      expect(result.platform).toBe("douyin");
-      if (result.platform !== "douyin") throw new Error("wrong platform");
-      expect(result.shots).toHaveLength(1);
-      expect(result.shots[0]).toEqual({
+      const content = result.output;
+      expect(content.platform).toBe("douyin");
+      if (content.platform !== "douyin") throw new Error("wrong platform");
+      expect(content.shots).toHaveLength(1);
+      expect(content.shots[0]).toEqual({
         order: 1,
         durationSeconds: 3,
         description: "小区外景",
         visualSuggestion: "航拍小区全景",
       });
-      expect(result.factsUsed[0]).toEqual({
+      expect(content.factsUsed[0]).toEqual({
         field: "district",
         value: "天河区",
       });
@@ -1763,10 +1766,11 @@ describe("DeepSeekTextProvider", () => {
         propertyFacts: { title: "test", district: "天河区" },
       });
 
-      expect(result.platform).toBe("wechat_moments");
-      if (result.platform !== "wechat_moments") throw new Error("wrong platform");
-      expect(result.copyOptions).toHaveLength(1);
-      expect(result.requiresFactReview).toBe(false);
+      const content = result.output;
+      expect(content.platform).toBe("wechat_moments");
+      if (content.platform !== "wechat_moments") throw new Error("wrong platform");
+      expect(content.copyOptions).toHaveLength(1);
+      expect(content.requiresFactReview).toBe(false);
     });
   });
 });

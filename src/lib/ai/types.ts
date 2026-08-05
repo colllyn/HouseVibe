@@ -180,6 +180,14 @@ export interface PropertySearchFilters {
 
 export type ContentPlatform = "xiaohongshu" | "douyin" | "wechat_moments";
 
+/** Complete result envelope from content generation, including usage metadata for quota settlement. */
+export interface GenerateContentResult {
+  output: GeneratedContent;
+  usage: AIUsage;
+  model: string;
+  requestId: string;
+}
+
 export interface ContentGenerationInput extends AIRequestContext {
   platform: ContentPlatform;
   propertyFacts: RedactedPropertyFacts;
@@ -360,7 +368,7 @@ export interface DeepSeekTextProvider {
   generateContent(
     input: ContentGenerationInput,
     signal?: AbortSignal
-  ): Promise<GeneratedContent>;
+  ): Promise<GenerateContentResult>;
 }
 
 // --- Fetch injection type ---
