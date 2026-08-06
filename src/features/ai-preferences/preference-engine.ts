@@ -177,6 +177,7 @@ export async function listPreferences(
     .from("ai_user_preferences")
     .select("*")
     .eq("user_id", userId)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   if (error) return [];
@@ -203,12 +204,13 @@ export async function togglePreference(
   preferenceId: string,
   status: "active" | "disabled",
 ): Promise<UserPreference | null> {
-  // Verify ownership
+  // Verify ownership (only non-deleted preferences)
   const { data: existing } = await client
     .from("ai_user_preferences")
     .select("id, user_id")
     .eq("id", preferenceId)
     .eq("user_id", userId)
+    .is("deleted_at", null)
     .single();
 
   if (!existing) return null;
@@ -238,7 +240,7 @@ export async function togglePreference(
 }
 
 /**
- * Delete a preference.
+ * Soft-delete a preference (sets deleted_at).
  */
 export async function deletePreference(
   client: SupabaseClient,
@@ -247,9 +249,10 @@ export async function deletePreference(
 ): Promise<boolean> {
   const { error } = await client
     .from("ai_user_preferences")
-    .delete()
+    .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq("id", preferenceId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    .is("deleted_at", null);
 
   return !error;
 }

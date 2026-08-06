@@ -38,6 +38,7 @@ const FEATURE_LABELS: Record<string, string> = {
 
 export default function AiPreferencesPage() {
   const [state, setState] = useState<PageState>({ status: "loading" });
+  const [errorIds, setErrorIds] = useState<Set<string>>(new Set());
 
   const fetchPreferences = useCallback(async () => {
     setState({ status: "loading" });
@@ -70,6 +71,7 @@ export default function AiPreferencesPage() {
   }, [fetchPreferences]);
 
   const handleToggle = async (id: string, currentStatus: string) => {
+    setErrorIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
     const newStatus = currentStatus === "active" ? "disabled" : "active";
     try {
       const res = await fetch(`/api/me/ai-preferences/${id}`, {
@@ -79,22 +81,27 @@ export default function AiPreferencesPage() {
       });
       if (res.ok) {
         fetchPreferences();
+      } else {
+        setErrorIds((prev) => new Set(prev).add(id));
       }
     } catch {
-      // Silently retry on next load
+      setErrorIds((prev) => new Set(prev).add(id));
     }
   };
 
   const handleDelete = async (id: string) => {
+    setErrorIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
     try {
       const res = await fetch(`/api/me/ai-preferences/${id}`, {
         method: "DELETE",
       });
       if (res.ok) {
         fetchPreferences();
+      } else {
+        setErrorIds((prev) => new Set(prev).add(id));
       }
     } catch {
-      // Silently retry on next load
+      setErrorIds((prev) => new Set(prev).add(id));
     }
   };
 
@@ -180,6 +187,7 @@ export default function AiPreferencesPage() {
               <PreferenceCard
                 key={pref.id}
                 preference={pref}
+                hasError={errorIds.has(pref.id)}
                 onToggle={handleToggle}
                 onDelete={handleDelete}
               />
@@ -199,6 +207,7 @@ export default function AiPreferencesPage() {
               <PreferenceCard
                 key={pref.id}
                 preference={pref}
+                hasError={errorIds.has(pref.id)}
                 onToggle={handleToggle}
                 onDelete={handleDelete}
               />
@@ -216,10 +225,12 @@ export default function AiPreferencesPage() {
 
 function PreferenceCard({
   preference,
+  hasError,
   onToggle,
   onDelete,
 }: {
   preference: UserPreference;
+  hasError?: boolean;
   onToggle: (id: string, status: string) => void;
   onDelete: (id: string) => void;
 }) {
@@ -273,6 +284,11 @@ function PreferenceCard({
           </button>
         </div>
       </div>
+      {hasError && (
+        <div className="mt-2 rounded bg-destructive/10 px-3 py-1.5 text-xs text-destructive">
+          操作失败，请重试
+        </div>
+      )}
     </div>
   );
 }

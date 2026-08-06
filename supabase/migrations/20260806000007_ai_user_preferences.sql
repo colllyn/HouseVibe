@@ -69,11 +69,12 @@ create unique index if not exists uq_ai_user_prefs_active
 
 alter table public.ai_user_preferences enable row level security;
 
--- Users can read their own preferences
+-- Users can read their own preferences; admins can read all.
+-- Short-circuit prevents anon from calling private.is_system_admin().
 create policy "Users can read own preferences" on public.ai_user_preferences
   for select using (
-    user_id = (select auth.uid())
-    or private.is_system_admin()
+    (auth.uid() is not null and user_id = auth.uid())
+    or (auth.uid() is not null and (select private.is_system_admin()))
   );
 
 -- Users can update status of their own preferences (enable/disable)
@@ -92,7 +93,21 @@ language plpgsql
 security definer
 set search_path = ''
 as $$
+declare
+  v_is_merge boolean;
 begin
+  -- Allow internal RPC merge operations to bypass column restrictions.
+  -- upsert_ai_preference sets this variable before its merge UPDATE.
+  begin
+    v_is_merge := nullif(current_setting('ai_pref.merge', true), '') = '1';
+  exception when others then
+    v_is_merge := false;
+  end;
+
+  if v_is_merge then
+    return new;
+  end if;
+
   -- Allow only status changes (and updated_at which the caller should set)
   if new.id <> old.id then
     raise exception 'Cannot change preference id';
@@ -140,6 +155,13 @@ create policy "Users can delete own preferences" on public.ai_user_preferences
   );
 
 -- No direct INSERT — use RPC only
+
+-- Explicit GRANTs: Supabase auto_expose_new_tables is not set;
+-- without these, the Data API roles cannot reach the table through RLS.
+grant select on public.ai_user_preferences to authenticated;
+grant update on public.ai_user_preferences to authenticated;
+grant delete on public.ai_user_preferences to authenticated;
+-- No GRANT to anon — this table requires authentication.
 
 -- =============================================================================
 -- 4. upsert_ai_preference RPC — server-side safe upsert
@@ -225,8 +247,8 @@ begin
   end if;
 
   -- Check if existing preference for this user+feature+key
-  select id, evidence_count, source_correction_ids
-  into v_existing_id, v_new_evidence_count, v_merged_source_ids
+  select id, evidence_count, confidence, source_correction_ids
+  into v_existing_id, v_new_evidence_count, v_new_confidence, v_merged_source_ids
   from public.ai_user_preferences
   where user_id = p_user_id
   and feature = p_feature
@@ -239,11 +261,13 @@ begin
     v_merged_source_ids := array(
       select distinct unnest(v_merged_source_ids || p_source_correction_ids)
     );
-    v_new_confidence := least(1.0, v_new_confidence + p_confidence);
+    v_new_confidence := least(1.0, coalesce(v_new_confidence, 0) + p_confidence);
+
+    -- Set bypass flag so the BEFORE UPDATE trigger allows column changes
+    perform set_config('ai_pref.merge', '1', true);
 
     update public.ai_user_preferences
     set
-      preference_value = p_preference_value,
       evidence_count = v_new_evidence_count,
       confidence = v_new_confidence,
       source_correction_ids = v_merged_source_ids,
@@ -414,10 +438,11 @@ begin
       -- Confidence: min(1.0, occurrence_count / (p_min_evidence * 2))
       v_confidence := least(1.0, v_corrections.occurrence_count::numeric / (p_min_evidence * 2));
 
+      -- IMPORTANT: Do NOT store original_value or confirmed_value in preference_value.
+      -- Free-text fields (description, notes, etc.) may contain PII embedded in text.
+      -- Only store type-level metadata: correctionDirection and hint.
       v_pref_value := jsonb_build_object(
         'correctionDirection', v_corrections.change_type,
-        'originalPattern', left(coalesce(v_corrections.original_value, ''), 50),
-        'preferredPattern', left(coalesce(v_corrections.confirmed_value, ''), 50),
         'hint', v_hint
       );
 
