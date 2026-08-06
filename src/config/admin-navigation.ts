@@ -53,4 +53,11 @@ export const adminNavigation: AdminNavItem[] = [
     order: 6,
     owner: 'ai-deepseek-engineer',
   },
+  {
+    label: 'AI 纠错',
+    href: '/admin/ai-corrections',
+    icon: 'GitCompare',
+    order: 7,
+    owner: 'ai-deepseek-engineer',
+  },
 ];

@@ -13,6 +13,7 @@ import {
   LogOut,
   BarChart3,
   Cpu,
+  GitCompare,
 } from "lucide-react";
 import { Drawer } from "vaul";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Home,
   BarChart3,
   Cpu,
+  GitCompare,
 };
 
 function getIcon(name: string): React.ComponentType<{ className?: string }> {
