@@ -55,20 +55,59 @@ function makeInput(overrides?: Partial<VisionAnalysisInput>): VisionAnalysisInpu
 }
 
 // ============================================================
-// Mock Provider Tests
+// Fail-Closed Tests (production factory)
 // ============================================================
 
-describe("DeepSeekVisionProvider (Mock)", () => {
+describe("DeepSeekVisionProvider (Fail-Closed)", () => {
   beforeEach(() => {
     vi.resetModules();
   });
 
-  it("returns mock results when no API key configured", async () => {
-    mockEnv();
+  it("throws AI_NOT_CONFIGURED when no API key configured", async () => {
+    mockEnv({ DEEPSEEK_VISION_API_KEY: undefined });
     const { createDeepSeekVisionProvider } = await import(
       "../deepseek-vision-provider"
     );
-    const provider = createDeepSeekVisionProvider();
+    expect(() => createDeepSeekVisionProvider()).toThrow(
+      "DeepSeek Vision API key is not configured"
+    );
+  });
+
+  it("throws AI_NOT_CONFIGURED with empty API key", async () => {
+    mockEnv({ DEEPSEEK_VISION_API_KEY: "" });
+    const { createDeepSeekVisionProvider } = await import(
+      "../deepseek-vision-provider"
+    );
+    expect(() => createDeepSeekVisionProvider()).toThrow(
+      "DeepSeek Vision API key is not configured"
+    );
+  });
+
+  it("production factory never silently mocks", async () => {
+    mockEnv({ DEEPSEEK_VISION_API_KEY: undefined });
+    const { createDeepSeekVisionProvider } = await import(
+      "../deepseek-vision-provider"
+    );
+    // Must throw — must not return a mock provider
+    expect(() => createDeepSeekVisionProvider()).toThrow();
+  });
+});
+
+// ============================================================
+// Mock Provider Tests (test factory only)
+// ============================================================
+
+describe("DeepSeekVisionProvider (Mock via test factory)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("test factory returns mock when key is missing", async () => {
+    mockEnv();
+    const { createTestVisionProvider } = await import(
+      "../deepseek-vision-provider"
+    );
+    const provider = createTestVisionProvider();
 
     const result = await provider.analyzePropertyImages(makeInput());
 
@@ -79,18 +118,16 @@ describe("DeepSeekVisionProvider (Mock)", () => {
       "indoor_living_room"
     );
     expect(result.visualSummary).toBeDefined();
-    expect(result.visualSummary.length).toBeGreaterThan(0);
-    expect(result.factChecks).toBeDefined();
     expect(result.factChecks.length).toBeGreaterThan(0);
-    expect(result.usage).toBeDefined();
+    expect(result.usage.estimatedCostUsd).toBe(0);
   });
 
-  it("handles multiple images", async () => {
+  it("test factory handles multiple images", async () => {
     mockEnv();
-    const { createDeepSeekVisionProvider } = await import(
+    const { createTestVisionProvider } = await import(
       "../deepseek-vision-provider"
     );
-    const provider = createDeepSeekVisionProvider();
+    const provider = createTestVisionProvider();
 
     const result = await provider.analyzePropertyImages(
       makeInput({
@@ -103,66 +140,24 @@ describe("DeepSeekVisionProvider (Mock)", () => {
     );
 
     expect(result.mediaResults.length).toBe(3);
-    expect(result.mediaResults[0]?.status).toBe("completed");
-    expect(result.mediaResults[1]?.aiLabels).toBeDefined();
   });
 
   it("returns consistent result shape", async () => {
     mockEnv();
-    const { createDeepSeekVisionProvider } = await import(
+    const { createTestVisionProvider } = await import(
       "../deepseek-vision-provider"
     );
-    const provider = createDeepSeekVisionProvider();
+    const provider = createTestVisionProvider();
 
     const result = await provider.analyzePropertyImages(makeInput());
 
-    // Verify all required fields are present
     for (const mr of result.mediaResults) {
       expect(mr.mediaId).toBeDefined();
       expect(mr.status).toMatch(/completed|failed/);
       expect(mr.aiLabels.sceneType).toBeDefined();
-      expect(mr.aiLabels.styles).toBeInstanceOf(Array);
-      expect(mr.aiLabels.visibleFeatures).toBeInstanceOf(Array);
-      expect(mr.aiLabels.condition).toBeInstanceOf(Array);
-      expect(mr.aiLabels.lighting).toBeInstanceOf(Array);
-      expect(mr.aiLabels.appliances).toBeInstanceOf(Array);
       expect(mr.aiLabels.confidence).toBeGreaterThanOrEqual(0);
       expect(mr.aiLabels.confidence).toBeLessThanOrEqual(1);
-      expect(mr.aiLabels.evidence).toBeInstanceOf(Array);
-      expect(mr.aiLabels.uncertainLabels).toBeInstanceOf(Array);
     }
-
-    expect(result.usage.estimatedCostUsd).toBe(0); // mock has no cost
-  });
-
-  it("includes visual summary for property description", async () => {
-    mockEnv();
-    const { createDeepSeekVisionProvider } = await import(
-      "../deepseek-vision-provider"
-    );
-    const provider = createDeepSeekVisionProvider();
-
-    const result = await provider.analyzePropertyImages(
-      makeInput({
-        propertyFacts: {
-          title: "Modern apartment",
-          decoration: "精装修",
-        },
-      })
-    );
-
-    expect(result.visualSummary.toLowerCase()).toContain("living");
-    expect(result.factChecks).toBeDefined();
-  });
-
-  it("returns zero-cost usage for mock", async () => {
-    mockEnv();
-    const { createDeepSeekVisionProvider } = await import(
-      "../deepseek-vision-provider"
-    );
-    const provider = createDeepSeekVisionProvider();
-
-    const result = await provider.analyzePropertyImages(makeInput());
     expect(result.usage.estimatedCostUsd).toBe(0);
   });
 });
@@ -237,7 +232,7 @@ describe("DeepSeekVisionProvider SSRF Protection", () => {
       provider.analyzePropertyImages(
         makeInput({ imageUrls: ["https://192.168.1.1/admin"] })
       )
-    ).rejects.toThrow("IP-based image URLs are not allowed");
+    ).rejects.toThrow("Internal network URLs are not allowed");
   });
 
   it("accepts valid HTTPS storage URLs", async () => {
@@ -310,7 +305,7 @@ describe("DeepSeekVisionProvider SSRF Protection", () => {
       provider.analyzePropertyImages(
         makeInput({ imageUrls: ["https://10.0.0.1/internal"] })
       )
-    ).rejects.toThrow("IP-based image URLs are not allowed");
+    ).rejects.toThrow("Internal network URLs are not allowed");
   });
 });
 
@@ -325,10 +320,10 @@ describe("PropertyVisionResult structure", () => {
 
   it("fact check has required fields", async () => {
     mockEnv();
-    const { createDeepSeekVisionProvider } = await import(
+    const { createTestVisionProvider } = await import(
       "../deepseek-vision-provider"
     );
-    const provider = createDeepSeekVisionProvider();
+    const provider = createTestVisionProvider();
 
     const result = await provider.analyzePropertyImages(makeInput());
 

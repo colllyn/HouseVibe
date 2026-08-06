@@ -85,7 +85,21 @@ const BLOCKED_HOSTS = new Set([
   "metadata.google.internal", // GCP metadata
 ]);
 
-function validateImageUrl(url: string): void {
+const IPV6_REGEX = /^\[?([0-9a-fA-F:]+)\]?$/;
+
+function isLoopbackOrPrivateIP(hostname: string): boolean {
+  // IPv4 check
+  const ipv4Regex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+  if (ipv4Regex.test(hostname)) return true;
+
+  // IPv6 check (bracketed or unbracketed)
+  const ipv6Match = hostname.match(IPV6_REGEX);
+  if (ipv6Match) return true;
+
+  return false;
+}
+
+function validateImageUrl(url: string, requestId: string): void {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -93,7 +107,7 @@ function validateImageUrl(url: string): void {
     throw new DeepSeekProviderError({
       code: "AI_UPSTREAM_ERROR",
       message: "Invalid image URL format",
-      requestId: "ssrf-check",
+      requestId,
       retryable: false,
     });
   }
@@ -103,39 +117,28 @@ function validateImageUrl(url: string): void {
     throw new DeepSeekProviderError({
       code: "AI_UPSTREAM_ERROR",
       message: "Image URL must use HTTPS",
-      requestId: "ssrf-check",
+      requestId,
       retryable: false,
     });
   }
 
-  // Block private/internal hosts
+  // Block private/internal hosts and IPs
   const hostname = parsed.hostname.toLowerCase();
-  if (BLOCKED_HOSTS.has(hostname)) {
+  if (BLOCKED_HOSTS.has(hostname) || isLoopbackOrPrivateIP(hostname)) {
     throw new DeepSeekProviderError({
       code: "AI_UPSTREAM_ERROR",
       message: "Internal network URLs are not allowed",
-      requestId: "ssrf-check",
-      retryable: false,
-    });
-  }
-
-  // Block IP addresses
-  const ipv4Regex = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-  if (ipv4Regex.test(hostname)) {
-    throw new DeepSeekProviderError({
-      code: "AI_UPSTREAM_ERROR",
-      message: "IP-based image URLs are not allowed",
-      requestId: "ssrf-check",
+      requestId,
       retryable: false,
     });
   }
 }
 
 // ============================================================
-// Mock Provider (when no API key is configured)
+// Mock Provider (for tests ONLY — NEVER used in production factory)
 // ============================================================
 
-function createMockVisionProvider(): DeepSeekVisionProvider {
+export function createMockVisionProvider(): DeepSeekVisionProvider {
   return {
     async analyzePropertyImages(
       input: VisionAnalysisInput,
@@ -194,8 +197,9 @@ function createRealVisionProvider(
   env: ReturnType<typeof getServerEnv>,
   fetchFn: FetchFn = globalThis.fetch
 ): DeepSeekVisionProvider {
-  const baseUrl =
-    env.DEEPSEEK_VISION_BASE_URL_PRIMARY ?? DEFAULT_VISION_BASE_URL + VISION_CHAT_PATH;
+  const baseUrl = env.DEEPSEEK_VISION_BASE_URL_PRIMARY
+    ? new URL(VISION_CHAT_PATH, env.DEEPSEEK_VISION_BASE_URL_PRIMARY).toString()
+    : DEFAULT_VISION_BASE_URL + VISION_CHAT_PATH;
   const apiKey = env.DEEPSEEK_VISION_API_KEY;
   const model = env.DEEPSEEK_VISION_MODEL;
   const maxImages = env.DEEPSEEK_VISION_MAX_IMAGES;
@@ -219,7 +223,7 @@ function createRealVisionProvider(
 
       // SSRF validation for every image URL
       for (const url of input.imageUrls) {
-        validateImageUrl(url);
+        validateImageUrl(url, requestId);
       }
 
       // Build the vision prompt
@@ -378,7 +382,7 @@ Return a JSON object with: mediaResults (array of per-image analysis), visualSum
 }
 
 // ============================================================
-// Factory
+// Factory — fail-closed: AI_NOT_CONFIGURED when key is missing
 // ============================================================
 
 export function createDeepSeekVisionProvider(
@@ -386,10 +390,29 @@ export function createDeepSeekVisionProvider(
 ): DeepSeekVisionProvider {
   const env = getServerEnv();
 
-  // Use mock when vision API key is not configured
+  // Fail-closed: no API key → AI_NOT_CONFIGURED, never silent mock
+  if (!env.DEEPSEEK_VISION_API_KEY) {
+    throw new DeepSeekProviderError({
+      code: "AI_NOT_CONFIGURED",
+      message: "DeepSeek Vision API key is not configured",
+      requestId: "vision-factory",
+      retryable: false,
+    });
+  }
+
+  return createRealVisionProvider(env, fetchFn);
+}
+
+/**
+ * Test-only factory: returns a mock provider without checking API key.
+ * MUST NOT be used in production code paths.
+ */
+export function createTestVisionProvider(
+  fetchFn?: FetchFn
+): DeepSeekVisionProvider {
+  const env = getServerEnv();
   if (!env.DEEPSEEK_VISION_API_KEY) {
     return createMockVisionProvider();
   }
-
   return createRealVisionProvider(env, fetchFn);
 }
