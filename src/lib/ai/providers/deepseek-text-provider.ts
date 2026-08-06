@@ -20,6 +20,7 @@ import {
   type GeneratedContent,
   type GenerateContentResult,
   type AIUsage,
+  type UserPreferenceHint,
 } from "../types";
 import {
   PropertyExtractionOutputSchema,
@@ -126,7 +127,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
     input: PropertyExtractionInput,
     signal?: AbortSignal
   ): Promise<PropertyExtractionResult> {
-    const prompt = buildExtractPropertyPrompt(input.text, input.sourceType);
+    const prompt = buildExtractPropertyPrompt(input.text, input.sourceType, input.userPreferences);
     const { parsed: raw } = await this.callWithRetry(
       input.requestId,
       "extractProperty",
@@ -141,7 +142,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
     input: ClientExtractionInput,
     signal?: AbortSignal
   ): Promise<ClientExtractionResult> {
-    const prompt = buildExtractClientPrompt(input.text, input.sourcePlatform);
+    const prompt = buildExtractClientPrompt(input.text, input.sourcePlatform, input.userPreferences);
     const { parsed: raw } = await this.callWithRetry(
       input.requestId,
       "extractClient",
@@ -156,7 +157,7 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
     input: SearchParseInput,
     signal?: AbortSignal
   ): Promise<PropertySearchFilters> {
-    const prompt = buildParsePropertySearchPrompt(input.query);
+    const prompt = buildParsePropertySearchPrompt(input.query, input.userPreferences);
     const { parsed: raw } = await this.callWithRetry(
       input.requestId,
       "parsePropertySearch",
@@ -489,6 +490,28 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
 // Prompt Builders
 // ============================================================
 
+/**
+ * Format user preference hints into a prompt block for injection.
+ * Only includes preferences with sufficient confidence.
+ */
+function formatPreferenceHints(
+  preferences?: UserPreferenceHint[]
+): string {
+  if (!preferences || preferences.length === 0) return "";
+
+  const filtered = preferences.filter((p) => p.confidence >= 0.3);
+  if (filtered.length === 0) return "";
+
+  const lines = filtered.map(
+    (p) => `- [${p.key}] ${p.value}（置信度: ${(p.confidence * 100).toFixed(0)}%）`
+  );
+
+  return `
+
+用户历史偏好（基于历史修正数据学习，请参考但不是必须遵守）：
+${lines.join("\n")}`;
+}
+
 function getSystemPrompt(capability: string): string {
   switch (capability) {
     case "parsePropertySearch":
@@ -504,8 +527,13 @@ function getSystemPrompt(capability: string): string {
   }
 }
 
-function buildParsePropertySearchPrompt(query: string): string {
-  return `你是一个房产搜索条件解析助手。请从用户输入中提取结构化筛选条件。
+function buildParsePropertySearchPrompt(
+  query: string,
+  userPreferences?: UserPreferenceHint[]
+): string {
+  const prefsBlock = formatPreferenceHints(userPreferences);
+
+  return `你是一个房产搜索条件解析助手。请从用户输入中提取结构化筛选条件。${prefsBlock}
 
 用户搜索："${query}"
 
@@ -546,9 +574,12 @@ ${JSON.stringify(SEARCH_FILTER_MINIMAL_FIXTURE, null, 2)}
 
 function buildExtractPropertyPrompt(
   text: string,
-  sourceType: string
+  sourceType: string,
+  userPreferences?: UserPreferenceHint[]
 ): string {
-  return `请从以下文本中提取房源结构化信息。
+  const prefsBlock = formatPreferenceHints(userPreferences);
+
+  return `请从以下文本中提取房源结构化信息。${prefsBlock}
 
 文本来源: ${sourceType}
 文本内容: "${text}"
@@ -567,9 +598,12 @@ data 中可提取的字段：title, city, district, businessArea, communityName,
 
 function buildExtractClientPrompt(
   text: string,
-  sourcePlatform?: string
+  sourcePlatform?: string,
+  userPreferences?: UserPreferenceHint[]
 ): string {
-  return `请从以下文本中提取客户需求结构化信息。
+  const prefsBlock = formatPreferenceHints(userPreferences);
+
+  return `请从以下文本中提取客户需求结构化信息。${prefsBlock}
 
 来源平台: ${sourcePlatform || "未知"}
 文本内容: "${text}"
@@ -590,6 +624,7 @@ function buildGenerateContentPrompt(
   input: ContentGenerationInput
 ): string {
   const platform = input.platform;
+  const prefsBlock = formatPreferenceHints(input.userPreferences);
 
   // Build the platform-specific schema definition and valid JSON example
   let schemaDef: string;
@@ -624,6 +659,7 @@ function buildGenerateContentPrompt(
 视觉摘要: ${input.visualSummary || "无"}
 展示缺点: ${input.showDrawbacks ? "是" : "否"}
 私信关键词: ${input.privateMessageKeyword || ""}
+${prefsBlock}
 
 ========================================
 输出 JSON Schema（严格遵循，逐字段输出）

@@ -22,6 +22,7 @@ import { DeepSeekProviderError } from "@/lib/ai/types";
 import { redactPropertyInput } from "@/lib/ai/privacy/redact-property-input";
 import { checkCompliance, toResponseStatus } from "@/lib/compliance/check";
 import { checkContentFacts, type SourcePropertyFacts } from "@/lib/ai/fact-checker";
+import { getPromptHints } from "@/features/ai-preferences/preference-engine";
 import { getServerEnv } from "@/config/env";
 import type {
   DeepSeekTextProvider,
@@ -437,7 +438,12 @@ export function createGenerateContentHandler(
       }
 
       // ============================================================
-      // Step 6: Model call — narrow DTO, no identity
+      // Step 6: Fetch user preferences for prompt hints
+      // ============================================================
+      const prefHints = await getPromptHints(client, user.id);
+
+      // ============================================================
+      // Step 7: Model call — narrow DTO, no identity
       // ============================================================
       const provider = getProvider();
       const providerInput: ContentGenerationInput = {
@@ -446,6 +452,11 @@ export function createGenerateContentHandler(
         modelName: "",
         platform,
         propertyFacts: facts,
+        userPreferences: prefHints.length > 0 ? prefHints.map(h => ({
+          key: h.preferenceKey,
+          value: h.hint,
+          confidence: h.confidence,
+        })) : undefined,
         ...contentOptions,
       };
 
@@ -471,8 +482,8 @@ export function createGenerateContentHandler(
       const { output: result, usage: providerUsage, model: providerModel } = providerResult;
 
       // ============================================================
-      // Step 7: Structured Output — validated by Provider (ContentGenerationOutputSchema)
-      // Step 8: Fact verification (P3-AI-009)
+      // Step 8: Structured Output — validated by Provider (ContentGenerationOutputSchema)
+      // Step 9: Fact verification (P3-AI-009)
       // ============================================================
       const factCheck = checkContentFacts(
         result.factsUsed ?? [],

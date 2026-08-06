@@ -124,6 +124,7 @@ export interface PropertyExtractionInput {
   text: string;
   sourceType: "text" | "speech" | "wechat";
   requestId: string;
+  userPreferences?: UserPreferenceHint[];
 }
 
 export interface PropertyExtractionResult {
@@ -140,6 +141,7 @@ export interface ClientExtractionInput {
   text: string;
   sourcePlatform: "wechat" | "text" | "other";
   requestId: string;
+  userPreferences?: UserPreferenceHint[];
 }
 
 export interface ClientExtractionResult {
@@ -154,6 +156,7 @@ export interface ClientExtractionResult {
 
 export interface SearchParseInput extends AIRequestContext {
   query: string;
+  userPreferences?: UserPreferenceHint[];
 }
 
 export interface PropertySearchFilters {

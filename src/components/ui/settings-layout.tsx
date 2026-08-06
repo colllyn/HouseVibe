@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { User, Building, Shield } from "lucide-react";
+import { User, Building, Shield, Brain } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SettingsNavItem {
@@ -15,6 +15,7 @@ interface SettingsNavItem {
 const settingsNavItems: SettingsNavItem[] = [
   { label: "个人资料", href: "/settings/profile", icon: User },
   { label: "工作区", href: "/settings/workspace", icon: Building },
+  { label: "AI 偏好", href: "/settings/ai-preferences", icon: Brain },
   { label: "隐私", href: "/settings/privacy", icon: Shield },
 ];
 
