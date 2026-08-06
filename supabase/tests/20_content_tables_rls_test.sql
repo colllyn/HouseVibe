@@ -121,19 +121,23 @@ SELECT is(
   '7b: status still ready — user B update had no effect'
 );
 
--- 8: Verify soft delete (update deleted_at) works
+-- 8: Direct soft-delete is blocked for authenticated users (RLS with_check)
+-- Soft-delete must use an RPC function (SECURITY DEFINER), matching the
+-- system-wide pattern: clients uses soft_delete_client(), properties/media
+-- use superuser-administered soft-delete.
 SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}';
-SELECT lives_ok(
+SELECT throws_ok(
   $$UPDATE public.content_projects SET deleted_at = now(), status = 'archived' WHERE workspace_id = '8cae1001-0000-4000-8000-000000000001'$$,
-  '8: soft delete via update works'
+  '42501', NULL,
+  '8: authenticated user cannot direct-update deleted_at (RLS enforcement)'
 );
 
--- 9: Deleted project not visible (filtered by WHERE deleted_at IS NULL)
+-- 9: Non-soft-deleted project still visible
 SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}';
 SELECT is(
   (SELECT count(*)::integer FROM public.content_projects WHERE workspace_id = '8cae1001-0000-4000-8000-000000000001' AND deleted_at IS NULL),
-  0,
-  '9: soft-deleted project not returned when filtering deleted_at IS NULL'
+  1,
+  '9: project still visible — soft-delete attempt was blocked'
 );
 
 -- ================================================================
