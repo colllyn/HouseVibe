@@ -21,6 +21,7 @@ import { createDeepSeekTextProvider } from "@/lib/ai/providers/deepseek-text-pro
 import { DeepSeekProviderError } from "@/lib/ai/types";
 import { redactPropertyInput } from "@/lib/ai/privacy/redact-property-input";
 import { checkCompliance, toResponseStatus } from "@/lib/compliance/check";
+import { checkContentFacts, type SourcePropertyFacts } from "@/lib/ai/fact-checker";
 import { getServerEnv } from "@/config/env";
 import type {
   DeepSeekTextProvider,
@@ -471,9 +472,43 @@ export function createGenerateContentHandler(
 
       // ============================================================
       // Step 7: Structured Output — validated by Provider (ContentGenerationOutputSchema)
-      // Step 8: Fact verification (P3-AI-009 — structural)
+      // Step 8: Fact verification (P3-AI-009)
       // ============================================================
-      const requiresFactReview = result.requiresFactReview ?? false;
+      const factCheck = checkContentFacts(
+        result.factsUsed ?? [],
+        result.visualFactsUsed ?? [],
+        // Only pass SourcePropertyFacts fields — prevents future PII leakage
+        // through type widening (P1-4 fix)
+        {
+          title: facts.title ?? null,
+          district: facts.district ?? null,
+          city: facts.city ?? null,
+          communityName: facts.communityName ?? null,
+          rentalType: facts.rentalType ?? null,
+          monthlyRent: facts.monthlyRent ?? null,
+          bedrooms: facts.bedrooms ?? null,
+          livingRooms: facts.livingRooms ?? null,
+          bathrooms: facts.bathrooms ?? null,
+          areaSqm: facts.areaSqm ?? null,
+          hasElevator: facts.hasElevator ?? null,
+          orientation: facts.orientation ?? null,
+          decoration: facts.decoration ?? null,
+          petsAllowed: facts.petsAllowed ?? null,
+          cookingAllowed: facts.cookingAllowed ?? null,
+          subwayText: facts.subwayText ?? null,
+          facilities: Array.isArray(facts.facilities)
+            ? (facts.facilities as string[])
+            : null,
+          tags: facts.tags ?? null,
+          sellingPoints: facts.sellingPoints ?? null,
+          description: facts.description ?? null,
+        } satisfies SourcePropertyFacts,
+      );
+      // Server-side fact checker is authoritative — AI self-assessment
+      // must not override fabricated-fact detection (P1 fix: ?? → ||)
+      const requiresFactReview =
+        result.requiresFactReview || factCheck.requiresFactReview;
+      const factCheckRiskFlags = factCheck.riskFlags;
 
       // ============================================================
       // Step 9: Compliance scan (P3-AI-010 — deterministic, no AI/network/DB)
@@ -535,7 +570,25 @@ export function createGenerateContentHandler(
           data: {
             contentVersionId: null,
             platform,
-            output: result,
+            output: {
+              ...result,
+              requiresFactReview:
+                result.requiresFactReview || factCheck.requiresFactReview,
+              // Merge server-side fact-check risk flags with AI self-reported flags
+              riskFlags: [
+                ...(result.riskFlags ?? []),
+                ...factCheckRiskFlags,
+              ],
+              // P3-AI-009: fact-check results nested inside output per api-contract §10.6
+              factCheck: {
+                fabricatedCount: factCheck.fabricatedFacts.length,
+                facts: factCheck.facts.map((f) => ({
+                  claim: f.claim,
+                  safety: f.safety,
+                  hasSource: f.hasSource,
+                })),
+              },
+            },
             copyAllowed,
             complianceStatus,
             model: providerModel || null,

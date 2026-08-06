@@ -38,6 +38,7 @@ const SENSITIVE_FIELDS = new Set([
   "clientWechat",
   "clientName",
   "clientIdNumber",
+  "internalNotes",
   // snake_case (from HTTP POST body)
   "owner_name",
   "owner_phone",
@@ -68,6 +69,7 @@ const FULLY_EXCLUDED_FIELDS = new Set([
   "clientIdNumber",
   "exactAddress",
   "keyLocation",
+  "internalNotes",
   // snake_case
   "owner_phone",
   "owner_wechat",
@@ -78,6 +80,7 @@ const FULLY_EXCLUDED_FIELDS = new Set([
   "key_location",
   "phone",
   "wechat",
+  "internal_notes",
 ]);
 
 // ============================================================
