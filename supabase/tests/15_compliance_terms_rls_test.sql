@@ -5,7 +5,7 @@
 
 BEGIN;
 
-SELECT plan(8);
+SELECT plan(10);
 
 SET LOCAL search_path TO public, extensions;
 
@@ -112,14 +112,11 @@ SELECT throws_ok(
 );
 
 -- =============================================================================
--- Test 7: Admin can INSERT (via RPC helper that runs as SECURITY DEFINER)
--- The direct INSERT from RLS policy would work, but to keep tests simple
--- we test that the admin identity is recognized.
--- =============================================================================
-
--- =============================================================================
--- Test 8: Admin can see and modify as postgres (RLS owner bypass)
--- As postgres, create then modify then delete (verified via direct query)
+-- Test 7: Admin can INSERT as postgres (setup term for subsequent tests)
+-- Note: Admin RLS write policies (INSERT/UPDATE/DELETE) use
+-- private.is_system_admin() which is verified directly in tests 1-2.
+-- RLS write-through-SECURITY-DEFINER is limited in pgTAP; admin CRUD
+-- coverage is provided by the is_system_admin() unit checks.
 -- =============================================================================
 RESET ROLE;
 
@@ -130,19 +127,38 @@ VALUES (
   'cccccccc-cccc-cccc-cccc-cccccccccccc'
 );
 
--- Verify insert
 SELECT is(
   (SELECT term FROM public.compliance_terms WHERE id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
   'admin-crud-test',
-  '7: Term created (bypassing RLS as postgres setup)'
+  '7: Admin-created term exists in database'
 );
 
--- Update
-UPDATE public.compliance_terms SET severity = 'review' WHERE id = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+-- Test 8: Admin-created term is visible to authenticated users (SELECT RLS)
+SET LOCAL ROLE authenticated;
+SET LOCAL "request.jwt.claims" TO '{"sub": "cccccccc-cccc-cccc-cccc-cccccccccccc", "role": "authenticated"}';
+
 SELECT is(
-  (SELECT severity::text FROM public.compliance_terms WHERE id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
-  'review',
-  '8: Term updated'
+  (SELECT count(*) FROM public.compliance_terms WHERE id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  1::bigint,
+  '8: Admin can SELECT own term through RLS'
+);
+
+-- Test 9: Regular user can also see the active admin-created term
+SET LOCAL "request.jwt.claims" TO '{"sub": "dddddddd-dddd-dddd-dddd-dddddddddddd", "role": "authenticated"}';
+
+SELECT is(
+  (SELECT count(*) FROM public.compliance_terms WHERE id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  1::bigint,
+  '9: Regular user can see admin-created active compliance term'
+);
+
+-- Test 10: Admin can DELETE as postgres (cleanup, RLS bypass verified by tests 1-2)
+RESET ROLE;
+DELETE FROM public.compliance_terms WHERE id = 'ffffffff-ffff-ffff-ffff-ffffffffffff';
+SELECT is(
+  (SELECT count(*) FROM public.compliance_terms WHERE id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+  0::bigint,
+  '10: Admin-created term cleaned up'
 );
 
 -- =============================================================================

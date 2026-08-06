@@ -80,9 +80,6 @@ export default function NewPropertyPage() {
           { key: "hasElevator", label: "有电梯" },
           { key: "petsAllowed", label: "可养宠物" },
           { key: "cookingAllowed", label: "可做饭" },
-          { key: "orientation", label: "朝向" },
-          { key: "decoration", label: "装修" },
-          { key: "subwayText", label: "地铁" },
         ];
 
         const fields: ExtractionField[] = fieldDefs.map((def) => {

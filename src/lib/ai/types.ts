@@ -371,6 +371,38 @@ export interface DeepSeekTextProvider {
   ): Promise<GenerateContentResult>;
 }
 
+// --- DeepSeekVisionProvider ---
+
+export interface VisionAnalysisInput extends AIRequestContext {
+  /** Service-generated short-lived signed URLs (not client-supplied) */
+  imageUrls: string[];
+  /** Safe property facts for visual cross-checking */
+  propertyFacts: RedactedPropertyFacts;
+  /** Schema version for output validation */
+  schemaVersion: string;
+}
+
+export interface SingleImageResult {
+  mediaId: string;
+  aiLabels: PropertyMediaAiLabel;
+  status: "completed" | "failed";
+  error?: string;
+}
+
+export interface PropertyVisionResult {
+  mediaResults: SingleImageResult[];
+  visualSummary: string;
+  factChecks: VisualFactCheck[];
+  usage: AIUsage;
+}
+
+export interface DeepSeekVisionProvider {
+  analyzePropertyImages(
+    input: VisionAnalysisInput,
+    signal?: AbortSignal
+  ): Promise<PropertyVisionResult>;
+}
+
 // --- Fetch injection type ---
 
 export type FetchFn = typeof globalThis.fetch;

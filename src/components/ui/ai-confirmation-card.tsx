@@ -89,7 +89,7 @@ function fieldStatusBadge(field: ExtractionField) {
       icon: AlertTriangle,
       label: "视觉冲突",
       color:
-        "bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-950/20 dark:text-orange-300",
+        "bg-ai-visual-conflict/15 text-ai-visual-conflict-foreground border-ai-visual-conflict/30",
     };
   }
   if (field.uncertain) {
@@ -97,7 +97,7 @@ function fieldStatusBadge(field: ExtractionField) {
       icon: HelpCircle,
       label: "不确定",
       color:
-        "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950/20 dark:text-amber-300",
+        "bg-ai-uncertain/15 text-ai-uncertain-foreground border-ai-uncertain/30",
     };
   }
   if (field.modified) {
@@ -105,7 +105,7 @@ function fieldStatusBadge(field: ExtractionField) {
       icon: Pencil,
       label: "已修改",
       color:
-        "bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950/20 dark:text-blue-300",
+        "bg-ai-modified/15 text-ai-modified-foreground border-ai-modified/30",
     };
   }
   if (field.confirmed) {
@@ -113,7 +113,7 @@ function fieldStatusBadge(field: ExtractionField) {
       icon: Check,
       label: "已确认",
       color:
-        "bg-green-100 text-green-800 border-green-300 dark:bg-green-950/20 dark:text-green-300",
+        "bg-ai-confirmed/15 text-ai-confirmed-foreground border-ai-confirmed/30",
     };
   }
   return null;
@@ -224,8 +224,8 @@ export function AiConfirmationCard({
           className={cn(
             "rounded-md px-3 py-2 text-xs",
             hasIssues
-              ? "bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300"
-              : "bg-green-50 text-green-800 dark:bg-green-950/20 dark:text-green-300"
+              ? "bg-ai-uncertain/10 text-ai-uncertain-foreground"
+              : "bg-ai-confirmed/10 text-ai-confirmed-foreground"
           )}
         >
           {statusMessage}
@@ -244,9 +244,9 @@ export function AiConfirmationCard({
               className={cn(
                 "rounded-lg border p-3 transition-colors",
                 field.factError && "border-destructive/50 bg-destructive/5",
-                field.visualConflict && "border-orange-300 bg-orange-50/50 dark:border-orange-800 dark:bg-orange-950/10",
-                field.uncertain && "border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/10",
-                field.confirmed && !field.uncertain && !field.visualConflict && !field.factError && "border-green-300 bg-green-50/30 dark:border-green-800 dark:bg-green-950/10"
+                field.visualConflict && "border-ai-visual-conflict/50 bg-ai-visual-conflict/5",
+                field.uncertain && "border-ai-uncertain/50 bg-ai-uncertain/5",
+                field.confirmed && !field.uncertain && !field.visualConflict && !field.factError && "border-ai-confirmed/50 bg-ai-confirmed/5"
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -298,14 +298,14 @@ export function AiConfirmationCard({
                       <button
                         type="button"
                         onClick={saveEdit}
-                        className="h-9 w-9 rounded-md bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90"
+                        className="min-h-[44px] min-w-[44px] rounded-md bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90"
                       >
                         <Check className="h-4 w-4" />
                       </button>
                       <button
                         type="button"
                         onClick={cancelEdit}
-                        className="h-9 w-9 rounded-md border flex items-center justify-center hover:bg-muted"
+                        className="min-h-[44px] min-w-[44px] rounded-md border flex items-center justify-center hover:bg-muted"
                       >
                         <X className="h-4 w-4" />
                       </button>
@@ -330,7 +330,7 @@ export function AiConfirmationCard({
                         <button
                           type="button"
                           onClick={() => startEdit(field)}
-                          className="h-6 w-6 rounded hover:bg-muted flex items-center justify-center flex-shrink-0"
+                          className="min-h-[44px] min-w-[44px] rounded hover:bg-muted flex items-center justify-center flex-shrink-0"
                           aria-label={`编辑 ${field.label}`}
                         >
                           <Pencil className="h-3 w-3 text-muted-foreground" />
@@ -341,12 +341,12 @@ export function AiConfirmationCard({
 
                   {/* Context notes */}
                   {field.uncertainReason && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                    <p className="text-xs text-ai-uncertain-foreground/80 mt-1">
                       💡 {field.uncertainReason}
                     </p>
                   )}
                   {field.visualConflictNote && (
-                    <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                    <p className="text-xs text-ai-visual-conflict-foreground/80 mt-1">
                       ⚠ {field.visualConflictNote}
                     </p>
                   )}
@@ -368,7 +368,7 @@ export function AiConfirmationCard({
                     type="button"
                     onClick={() => toggleConfirm(field)}
                     className={cn(
-                      "flex-shrink-0 h-8 w-8 rounded-full border-2 flex items-center justify-center transition-colors",
+                      "flex-shrink-0 min-h-[44px] min-w-[44px] rounded-full border-2 flex items-center justify-center transition-colors",
                       field.confirmed
                         ? "bg-primary border-primary text-primary-foreground"
                         : "border-muted-foreground/30 hover:border-primary/50"
@@ -396,6 +396,7 @@ export function AiConfirmationCard({
           <button
             type="button"
             onClick={() => setShowMissing(!showMissing)}
+            aria-expanded={showMissing}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground min-h-[44px]"
           >
             {showMissing ? (

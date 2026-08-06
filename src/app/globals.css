@@ -20,6 +20,15 @@
   --color-border: hsl(214.3 31.8% 91.4%);
   --color-input: hsl(214.3 31.8% 91.4%);
   --color-ring: hsl(222.2 84% 4.9%);
+  /* AI semantic state colors */
+  --color-ai-uncertain: hsl(38 92% 50%);
+  --color-ai-uncertain-foreground: hsl(38 92% 20%);
+  --color-ai-visual-conflict: hsl(24 95% 53%);
+  --color-ai-visual-conflict-foreground: hsl(24 95% 20%);
+  --color-ai-confirmed: hsl(142 71% 45%);
+  --color-ai-confirmed-foreground: hsl(142 71% 15%);
+  --color-ai-modified: hsl(217 91% 60%);
+  --color-ai-modified-foreground: hsl(217 91% 20%);
   --radius: 0.5rem;
   --font-sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB",
     "Noto Sans SC", system-ui, -apple-system, "Segoe UI", Roboto,
