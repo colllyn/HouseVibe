@@ -83,10 +83,43 @@ test.describe("Compliance Admin", () => {
     await supabase.auth.admin.deleteUser(userId);
   });
 
-  test("2. non-admin cannot access compliance page", async ({ page }) => {
-    await page.goto("/admin/compliance");
-    await page.waitForLoadState("networkidle");
-    const url = page.url();
-    expect(url.includes("/admin/compliance")).toBe(false);
+  test("2. authenticated non-admin cannot access admin pages", async ({ page }) => {
+    const supabase = getSupabaseClient();
+    const email = uniqueEmail("comp-regular");
+
+    // Create regular user (NO system admin grant)
+    const { data: userData } = await supabase.auth.admin.createUser({
+      email,
+      password: TEST_PASSWORD,
+      email_confirm: true,
+    });
+    const userId = userData.user!.id;
+
+    try {
+      // Login as regular user
+      await page.goto("/login");
+      await page.waitForLoadState("networkidle");
+      await page.fill("#email", email);
+      await page.fill("#password", TEST_PASSWORD);
+      await page.click('button[type="submit"]');
+      await page.waitForURL(/\/onboarding|\/dashboard/, { timeout: 15000 });
+
+      if (page.url().includes("/onboarding")) {
+        await page.waitForLoadState("networkidle");
+        await page.fill("#workspaceName", "Regular-E2E-WS");
+        await page.fill("#city", "Shanghai");
+        await page.click('button[type="submit"]');
+        await page.waitForURL(/\/dashboard/, { timeout: 15000 });
+      }
+
+      // Try to access admin — should be redirected (not a system admin)
+      await page.goto("/admin/compliance");
+      await page.waitForLoadState("networkidle");
+      const url = page.url();
+      expect(url.includes("/admin/compliance")).toBe(false);
+      expect(url.includes("/dashboard") || url.includes("/login")).toBe(true);
+    } finally {
+      await supabase.auth.admin.deleteUser(userId);
+    }
   });
 });
