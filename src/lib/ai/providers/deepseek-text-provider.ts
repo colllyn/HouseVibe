@@ -35,6 +35,14 @@ import {
   DOUYIN_FIXTURE,
   WECHAT_MOMENTS_FIXTURE,
 } from "../fixtures";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  getCircuitState,
+  resolveModelEndpoint,
+  reportSuccess,
+  reportFailure,
+  type CircuitState,
+} from "@/features/ai-runtime/circuit-breaker";
 
 // ============================================================
 // Constants
@@ -115,10 +123,16 @@ function extractUsage(data: Record<string, unknown> | undefined): AIUsage {
 export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
   private readonly fetchFn: FetchFn;
   private readonly configOverride?: Partial<ServerEnv>;
+  private readonly supabase?: SupabaseClient;
 
-  constructor(fetchFn?: FetchFn, configOverride?: Partial<ServerEnv>) {
+  constructor(
+    fetchFn?: FetchFn,
+    configOverride?: Partial<ServerEnv>,
+    supabase?: SupabaseClient,
+  ) {
     this.fetchFn = fetchFn ?? globalThis.fetch;
     this.configOverride = configOverride;
+    this.supabase = supabase;
   }
 
   // --- Public API ---
@@ -206,8 +220,24 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
     const systemPrompt = getSystemPrompt(capability);
 
     let lastError: DeepSeekProviderError | null = null;
-    let currentModel = env.DEEPSEEK_MODEL;
     let retryCount = 0;
+
+    // Circuit breaker: check state and resolve model/endpoint
+    let circuitState: CircuitState = { circuitOpen: false, mode: "auto", consecutiveFailures: 0 };
+    let resolvedEndpoint = {
+      baseUrl: env.DEEPSEEK_BASE_URL || DEFAULT_BASE_URL,
+      apiKey: env.DEEPSEEK_API_KEY ?? "",
+      model: env.DEEPSEEK_MODEL,
+    };
+
+    if (this.supabase) {
+      circuitState = await getCircuitState(this.supabase, "text");
+      resolvedEndpoint = resolveModelEndpoint("text", circuitState);
+    }
+
+    let currentModel = resolvedEndpoint.model;
+    const currentBaseUrl = resolvedEndpoint.baseUrl;
+    const currentApiKey = resolvedEndpoint.apiKey;
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       // Check abort before each attempt
@@ -222,11 +252,9 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
 
       const startTime = Date.now();
       try {
-        // apiKey is guaranteed by validateConfig()
-        const apiKey = env.DEEPSEEK_API_KEY ?? "";
         const result = await this.makeRequest(
-          env.DEEPSEEK_BASE_URL || DEFAULT_BASE_URL,
-          apiKey,
+          currentBaseUrl,
+          currentApiKey,
           currentModel,
           systemPrompt,
           prompt,
@@ -248,6 +276,12 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
           inputTokens: result.usage?.inputTokens,
           outputTokens: result.usage?.outputTokens,
         });
+
+        // Report success to circuit breaker
+        if (this.supabase) {
+          reportSuccess(this.supabase, "text").catch(() => {});
+        }
+
         return { parsed, usage: result.usage, model: currentModel };
       } catch (err) {
         const durationMs = Date.now() - startTime;
@@ -257,6 +291,16 @@ export class DeepSeekTextProviderImpl implements DeepSeekTextProvider {
 
           // Abort → immediate throw, no retry, no log
           if (err.code === "AI_REQUEST_ABORTED") throw err;
+
+          // Track circuit breaker failure (fire-and-forget, don't block)
+          // Only count server errors: AI_UPSTREAM_ERROR (5xx/connection), AI_TIMEOUT, AI_RATE_LIMITED
+          // Don't count: AI_INVALID_RESPONSE (schema/parse errors), AI_NOT_CONFIGURED, AI_REQUEST_ABORTED
+          if (this.supabase) {
+            const isSrvErr = err.code === "AI_UPSTREAM_ERROR" ||
+                             err.code === "AI_TIMEOUT" ||
+                             err.code === "AI_RATE_LIMITED";
+            reportFailure(this.supabase, "text", isSrvErr).catch(() => {});
+          }
 
           // Non-retryable or last attempt → throw
           if (!err.retryable || attempt === MAX_ATTEMPTS - 1) {

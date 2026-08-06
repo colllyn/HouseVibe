@@ -113,7 +113,7 @@ SELECT col_is_pk('public', 'audit_logs', 'id', 'audit_logs.id is PK');
 SELECT col_is_fk('public', 'audit_logs', 'workspace_id', 'audit_logs.workspace_id FK to workspaces');
 SELECT col_is_fk('public', 'audit_logs', 'actor_user_id', 'audit_logs.actor_user_id FK to profiles');
 SELECT col_is_null('public', 'audit_logs', 'workspace_id', 'audit_logs.workspace_id can be NULL (system-level ops)');
-SELECT col_not_null('public', 'audit_logs', 'actor_user_id', 'audit_logs.actor_user_id NOT NULL');
+SELECT col_is_null('public', 'audit_logs', 'actor_user_id', 'audit_logs.actor_user_id can be NULL (system-level ops)');
 SELECT col_not_null('public', 'audit_logs', 'entity_type', 'audit_logs.entity_type NOT NULL');
 SELECT col_not_null('public', 'audit_logs', 'entity_id', 'audit_logs.entity_id NOT NULL');
 SELECT col_not_null('public', 'audit_logs', 'action', 'audit_logs.action NOT NULL');
