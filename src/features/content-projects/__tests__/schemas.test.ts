@@ -10,6 +10,9 @@ import {
   UpdateContentProjectSchema,
   ContentProjectsQuerySchema,
   ContentProjectSchema,
+  ContentVersionSchema,
+  CreateContentVersionSchema,
+  UpdateContentVersionFeedbackSchema,
   ContentPlatformEnum,
   ContentProjectStatusEnum,
 } from "../schemas";
@@ -232,6 +235,221 @@ describe("ContentProjectSchema", () => {
 
   it("rejects non-UUID id", () => {
     const result = ContentProjectSchema.safeParse({ ...validProject, id: "bad" });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================
+// ContentVersionSchema
+// ============================================================
+
+describe("ContentVersionSchema", () => {
+  const validVersion = {
+    id: "e0000000-0000-0000-0000-000000000001",
+    workspace_id: "b0000000-0000-0000-0000-000000000001",
+    content_project_id: "a0000000-0000-0000-0000-000000000001",
+    version_number: 1,
+    model_provider: "deepseek",
+    model_name: "deepseek-v4-pro",
+    prompt_version: "1.0.0",
+    input_snapshot: { platform: "xiaohongshu" },
+    output_json: { body: "test content" },
+    facts_used: [],
+    missing_information: [],
+    risk_flags: [],
+    compliance_status: "clean",
+    compliance_flags: [],
+    feedback_score: null,
+    feedback_type: null,
+    feedback_comment: null,
+    created_by: "d0000000-0000-0000-0000-000000000001",
+    created_at: "2026-08-06T10:00:00Z",
+  };
+
+  it("accepts valid version", () => {
+    const result = ContentVersionSchema.safeParse(validVersion);
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing model_name", () => {
+    const { model_name: _mn, ...rest } = validVersion;
+    const result = ContentVersionSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects non-UUID id", () => {
+    const result = ContentVersionSchema.safeParse({ ...validVersion, id: "bad" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects feedback_score out of range (2)", () => {
+    const result = ContentVersionSchema.safeParse({ ...validVersion, feedback_score: 2 });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects feedback_score out of range (-2)", () => {
+    const result = ContentVersionSchema.safeParse({ ...validVersion, feedback_score: -2 });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts valid feedback_score (-1, 0, 1)", () => {
+    expect(ContentVersionSchema.safeParse({ ...validVersion, feedback_score: -1 }).success).toBe(true);
+    expect(ContentVersionSchema.safeParse({ ...validVersion, feedback_score: 0 }).success).toBe(true);
+    expect(ContentVersionSchema.safeParse({ ...validVersion, feedback_score: 1 }).success).toBe(true);
+  });
+
+  it("accepts null feedback fields", () => {
+    const result = ContentVersionSchema.safeParse({
+      ...validVersion,
+      feedback_score: null,
+      feedback_type: null,
+      feedback_comment: null,
+    });
+    expect(result.success).toBe(true);
+  });
+});
+
+// ============================================================
+// CreateContentVersionSchema
+// ============================================================
+
+describe("CreateContentVersionSchema", () => {
+  const validInput = {
+    model_name: "deepseek-v4-pro",
+    prompt_version: "1.0.0",
+    input_snapshot: { platform: "xiaohongshu" },
+    output_json: { body: "test" },
+  };
+
+  it("accepts minimal valid input", () => {
+    const result = CreateContentVersionSchema.safeParse(validInput);
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts with optional fields", () => {
+    const result = CreateContentVersionSchema.safeParse({
+      ...validInput,
+      facts_used: [{ claim: "test" }],
+      missing_information: ["info"],
+      risk_flags: [{ type: "risk" }],
+      compliance_status: "review_required",
+      compliance_flags: [{ flag: "test" }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects empty model_name", () => {
+    const result = CreateContentVersionSchema.safeParse({ ...validInput, model_name: "" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects missing model_name", () => {
+    const { model_name: _mn, ...rest } = validInput;
+    const result = CreateContentVersionSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects missing prompt_version", () => {
+    const { prompt_version: _pv, ...rest } = validInput;
+    const result = CreateContentVersionSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects missing input_snapshot", () => {
+    const { input_snapshot: _is, ...rest } = validInput;
+    const result = CreateContentVersionSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects missing output_json", () => {
+    const { output_json: _oj, ...rest } = validInput;
+    const result = CreateContentVersionSchema.safeParse(rest);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects extra fields (strict)", () => {
+    const result = CreateContentVersionSchema.safeParse({
+      ...validInput,
+      workspace_id: "fake",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects invalid compliance_status", () => {
+    const result = CreateContentVersionSchema.safeParse({
+      ...validInput,
+      compliance_status: "invalid",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts all valid compliance_status values", () => {
+    expect(CreateContentVersionSchema.safeParse({ ...validInput, compliance_status: "clean" }).success).toBe(true);
+    expect(CreateContentVersionSchema.safeParse({ ...validInput, compliance_status: "review_required" }).success).toBe(true);
+    expect(CreateContentVersionSchema.safeParse({ ...validInput, compliance_status: "blocked" }).success).toBe(true);
+  });
+});
+
+// ============================================================
+// UpdateContentVersionFeedbackSchema
+// ============================================================
+
+describe("UpdateContentVersionFeedbackSchema", () => {
+  it("accepts valid feedback with all fields", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({
+      feedback_score: 1,
+      feedback_type: "positive",
+      feedback_comment: "Great content!",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts partial feedback (score only)", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({ feedback_score: -1 });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts empty object (all optional)", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({});
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects feedback_score out of range (2)", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({ feedback_score: 2 });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects feedback_score out of range (-2)", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({ feedback_score: -2 });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects feedback_comment over 500 chars", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({
+      feedback_comment: "a".repeat(501),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts feedback_comment at 500 chars", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({
+      feedback_comment: "a".repeat(500),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects feedback_type over 50 chars", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({
+      feedback_type: "a".repeat(51),
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects extra fields (strict)", () => {
+    const result = UpdateContentVersionFeedbackSchema.safeParse({
+      feedback_score: 1,
+      extra_field: "should not be here",
+    });
     expect(result.success).toBe(false);
   });
 });

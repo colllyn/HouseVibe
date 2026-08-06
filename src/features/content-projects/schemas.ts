@@ -133,3 +133,61 @@ export const ContentProjectListSchema = z.object({
   limit: z.number().int(),
   offset: z.number().int(),
 });
+
+// ============================================================
+// Content Version
+// ============================================================
+
+export const ContentVersionSchema = z.object({
+  id: z.string().uuid(),
+  workspace_id: z.string().uuid(),
+  content_project_id: z.string().uuid(),
+  version_number: z.number().int().positive(),
+  model_provider: z.string(),
+  model_name: z.string(),
+  prompt_version: z.string(),
+  input_snapshot: z.record(z.string(), z.unknown()),
+  output_json: z.record(z.string(), z.unknown()),
+  facts_used: z.array(z.unknown()),
+  missing_information: z.array(z.unknown()),
+  risk_flags: z.array(z.unknown()),
+  compliance_status: ComplianceStatusEnum,
+  compliance_flags: z.array(z.unknown()),
+  feedback_score: z.number().int().min(-1).max(1).nullable(),
+  feedback_type: z.string().nullable(),
+  feedback_comment: z.string().nullable(),
+  created_by: z.string().uuid(),
+  created_at: z.string(),
+});
+
+export type ContentVersion = z.infer<typeof ContentVersionSchema>;
+
+// ============================================================
+// Create Content Version
+// ============================================================
+
+export const CreateContentVersionSchema = z.object({
+  model_name: z.string().min(1),
+  prompt_version: z.string().min(1),
+  input_snapshot: z.record(z.string(), z.unknown()),
+  output_json: z.record(z.string(), z.unknown()),
+  facts_used: z.array(z.unknown()).optional(),
+  missing_information: z.array(z.unknown()).optional(),
+  risk_flags: z.array(z.unknown()).optional(),
+  compliance_status: ComplianceStatusEnum.optional(),
+  compliance_flags: z.array(z.unknown()).optional(),
+}).strict();
+
+export type CreateContentVersionInput = z.infer<typeof CreateContentVersionSchema>;
+
+// ============================================================
+// Update Content Version Feedback
+// ============================================================
+
+export const UpdateContentVersionFeedbackSchema = z.object({
+  feedback_score: z.number().int().min(-1).max(1).optional(),
+  feedback_type: z.string().max(50).optional(),
+  feedback_comment: z.string().max(500).optional(),
+}).strict();
+
+export type UpdateContentVersionFeedbackInput = z.infer<typeof UpdateContentVersionFeedbackSchema>;
