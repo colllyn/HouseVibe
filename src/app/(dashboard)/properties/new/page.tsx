@@ -1,9 +1,10 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, Lock, Loader2, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Lock, Loader2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { VoiceRecorder } from "@/components/ui/voice-recorder";
 
 const inputCls = (e?: boolean) => cn(
   "w-full rounded-md border bg-background px-3 py-2.5 text-sm min-h-[44px]",
@@ -16,6 +17,75 @@ export default function NewPropertyPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [showPrivate, setShowPrivate] = React.useState(false);
+  const [voiceText, setVoiceText] = React.useState<string | null>(null);
+  const [aiExtracting, setAiExtracting] = React.useState(false);
+
+  const handleVoiceTranscription = (text: string) => {
+    setVoiceText(text);
+  };
+
+  const handleAiExtract = async () => {
+    if (!voiceText) return;
+    setAiExtracting(true);
+    setError(null);
+    try {
+      const resp = await fetch("/api/ai/extract-property", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: voiceText, sourceType: "speech" }),
+      });
+      const result = await resp.json();
+      if (!resp.ok) {
+        setError(result.error?.message ?? "AI 提取失败");
+        return;
+      }
+      // Auto-fill form fields from AI extraction
+      const extraction = result.data?.extraction?.data;
+      if (extraction) {
+        const form = document.querySelector("form");
+        if (!form) return;
+        const fieldMap: Record<string, string | undefined> = {
+          title: extraction.title,
+          city: extraction.city,
+          district: extraction.district,
+          business_area: extraction.businessArea,
+          community_name: extraction.communityName,
+          address_text: extraction.addressText,
+          rental_type: extraction.rentalType,
+          monthly_rent: extraction.monthlyRent != null ? String(extraction.monthlyRent) : undefined,
+          deposit_terms: extraction.depositTerms,
+          bedrooms: extraction.bedrooms != null ? String(extraction.bedrooms) : undefined,
+          living_rooms: extraction.livingRooms != null ? String(extraction.livingRooms) : undefined,
+          bathrooms: extraction.bathrooms != null ? String(extraction.bathrooms) : undefined,
+          area_sqm: extraction.areaSqm != null ? String(extraction.areaSqm) : undefined,
+          floor: extraction.floor != null ? String(extraction.floor) : undefined,
+          available_from: extraction.availableFrom,
+        };
+        Object.entries(fieldMap).forEach(([name, value]) => {
+          if (value !== undefined && value !== null && value !== "") {
+            const el = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
+            if (el) el.value = value;
+          }
+        });
+        if (extraction.hasElevator) {
+          const el = form.elements.namedItem("has_elevator") as HTMLInputElement | null;
+          if (el) el.checked = true;
+        }
+        if (extraction.petsAllowed) {
+          const el = form.elements.namedItem("pets_allowed") as HTMLInputElement | null;
+          if (el) el.checked = true;
+        }
+        if (extraction.cookingAllowed) {
+          const el = form.elements.namedItem("cooking_allowed") as HTMLInputElement | null;
+          if (el) el.checked = true;
+        }
+      }
+    } catch {
+      setError("AI 提取失败，请检查网络后重试");
+    } finally {
+      setAiExtracting(false);
+    }
+  };
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -47,6 +117,40 @@ export default function NewPropertyPage() {
         <div><h1 className="text-xl font-bold">录入房源</h1></div>
       </div>
       <form onSubmit={handleCreate} className="space-y-6">
+        {/* Voice Input Section */}
+        <section className="space-y-3 rounded-lg border p-4">
+          <h2 className="font-semibold text-sm flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-primary" />
+            语音录入（AI 智能提取）
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            口述房源信息，AI 将自动提取并填充到下方表单
+          </p>
+          <VoiceRecorder
+            onTranscription={handleVoiceTranscription}
+            purpose="property"
+          />
+          {voiceText && (
+            <div className="space-y-2">
+              <div className="p-3 rounded bg-muted/50 text-sm whitespace-pre-wrap max-h-32 overflow-y-auto">
+                {voiceText}
+              </div>
+              <button
+                type="button"
+                onClick={handleAiExtract}
+                disabled={aiExtracting}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 min-h-[44px] disabled:opacity-50 transition-colors"
+              >
+                {aiExtracting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />AI 提取中...</>
+                ) : (
+                  <><Sparkles className="h-4 w-4" />AI 提取并填充表单</>
+                )}
+              </button>
+            </div>
+          )}
+        </section>
+
         <section className="space-y-4 rounded-lg border p-4">
           <h2 className="font-semibold text-sm">基本信息</h2>
           <div className="space-y-1.5"><label className="text-sm font-medium">房源标题 *</label><input name="title" required className={inputCls()} placeholder="例如：阳光花园精装两居室" /></div>

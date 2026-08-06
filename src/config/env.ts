@@ -69,7 +69,7 @@ const serverEnvSchema = z.object({
   DEEPSEEK_VISION_BASE_URL_PRIMARY: deepseekUrl("DEEPSEEK_VISION_BASE_URL_PRIMARY"),
   DEEPSEEK_VISION_BASE_URL_FALLBACK: deepseekUrl("DEEPSEEK_VISION_BASE_URL_FALLBACK"),
   DEEPSEEK_VISION_API_KEY: z.string().min(1).optional(),
-  STT_BASE_URL: z.string().url().optional(),
+  STT_BASE_URL: deepseekUrl("STT_BASE_URL"),
   STT_API_KEY: z.string().optional(),
   CRON_SECRET: z.string().optional(),
   INVITE_TOKEN_SECRET: z.string().min(32),
