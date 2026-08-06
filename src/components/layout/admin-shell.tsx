@@ -11,6 +11,8 @@ import {
   Menu,
   X,
   LogOut,
+  BarChart3,
+  Cpu,
 } from "lucide-react";
 import { Drawer } from "vaul";
 import { cn } from "@/lib/utils";
@@ -24,6 +26,8 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   ShieldCheck,
   UserPlus,
   Home,
+  BarChart3,
+  Cpu,
 };
 
 function getIcon(name: string): React.ComponentType<{ className?: string }> {

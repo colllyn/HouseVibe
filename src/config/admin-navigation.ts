@@ -39,5 +39,18 @@ export const adminNavigation: AdminNavItem[] = [
     order: 4,
     owner: 'ai-deepseek-engineer',
   },
-  // Future: ai-deepseek-engineer items for /admin/ai-usage, etc.
+  {
+    label: 'AI 用量',
+    href: '/admin/ai-usage',
+    icon: 'BarChart3',
+    order: 5,
+    owner: 'ai-deepseek-engineer',
+  },
+  {
+    label: 'AI 模型',
+    href: '/admin/ai-models',
+    icon: 'Cpu',
+    order: 6,
+    owner: 'ai-deepseek-engineer',
+  },
 ];
