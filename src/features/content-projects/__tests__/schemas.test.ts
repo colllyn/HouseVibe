@@ -13,6 +13,10 @@ import {
   ContentVersionSchema,
   CreateContentVersionSchema,
   UpdateContentVersionFeedbackSchema,
+  PublishingRecordSchema,
+  CreatePublishingRecordSchema,
+  UpdatePublishingRecordSchema,
+  PublishingRecordsQuerySchema,
   ContentPlatformEnum,
   ContentProjectStatusEnum,
 } from "../schemas";
@@ -451,5 +455,177 @@ describe("UpdateContentVersionFeedbackSchema", () => {
       extra_field: "should not be here",
     });
     expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================
+// PublishingRecordSchema
+// ============================================================
+
+describe("PublishingRecordSchema", () => {
+  const validRecord = {
+    id: "f0000000-0000-0000-0000-000000000001",
+    workspace_id: "b0000000-0000-0000-0000-000000000001",
+    content_project_id: "a0000000-0000-0000-0000-000000000001",
+    content_version_id: "e0000000-0000-0000-0000-000000000001",
+    platform: "douyin",
+    published_at: "2026-08-06T10:00:00Z",
+    post_url: null,
+    content_code: null,
+    private_message_keyword: null,
+    views: 0,
+    likes: 0,
+    favorites: 0,
+    comments: 0,
+    direct_messages: 0,
+    qualified_leads: 0,
+    viewings: 0,
+    deals: 0,
+    created_at: "2026-08-06T10:00:00Z",
+    updated_at: "2026-08-06T10:00:00Z",
+  };
+
+  it("accepts valid record with null fields", () => {
+    expect(PublishingRecordSchema.safeParse(validRecord).success).toBe(true);
+  });
+
+  it("accepts record with filled optional fields", () => {
+    const result = PublishingRecordSchema.safeParse({
+      ...validRecord,
+      post_url: "https://douyin.com/v/abc123",
+      content_code: "DM123",
+      private_message_keyword: "看房666",
+      views: 1200,
+      likes: 45,
+      qualified_leads: 3,
+      deals: 1,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects negative metrics", () => {
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, views: -1 }).success).toBe(false);
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, likes: -1 }).success).toBe(false);
+  });
+
+  it("rejects non-UUID id", () => {
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, id: "bad" }).success).toBe(false);
+  });
+});
+
+// ============================================================
+// CreatePublishingRecordSchema
+// ============================================================
+
+describe("CreatePublishingRecordSchema", () => {
+  const validInput = {
+    content_version_id: "e0000000-0000-0000-0000-000000000001",
+    platform: "xiaohongshu",
+    published_at: "2026-08-06T10:00:00Z",
+  };
+
+  it("accepts minimal valid input", () => {
+    expect(CreatePublishingRecordSchema.safeParse(validInput).success).toBe(true);
+  });
+
+  it("accepts with optional fields", () => {
+    const result = CreatePublishingRecordSchema.safeParse({
+      ...validInput,
+      post_url: "https://example.com/post",
+      content_code: "CODE123",
+      private_message_keyword: "看房888",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects missing content_version_id", () => {
+    const { content_version_id: _cv, ...rest } = validInput;
+    expect(CreatePublishingRecordSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("rejects missing platform", () => {
+    const { platform: _p, ...rest } = validInput;
+    expect(CreatePublishingRecordSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("rejects missing published_at", () => {
+    const { published_at: _pa, ...rest } = validInput;
+    expect(CreatePublishingRecordSchema.safeParse(rest).success).toBe(false);
+  });
+
+  it("rejects invalid platform", () => {
+    expect(CreatePublishingRecordSchema.safeParse({ ...validInput, platform: "instagram" }).success).toBe(false);
+  });
+
+  it("rejects extra fields (strict)", () => {
+    expect(CreatePublishingRecordSchema.safeParse({ ...validInput, extra: true }).success).toBe(false);
+  });
+});
+
+// ============================================================
+// UpdatePublishingRecordSchema
+// ============================================================
+
+describe("UpdatePublishingRecordSchema", () => {
+  it("accepts empty update (all optional)", () => {
+    expect(UpdatePublishingRecordSchema.safeParse({}).success).toBe(true);
+  });
+
+  it("accepts partial metric update", () => {
+    const result = UpdatePublishingRecordSchema.safeParse({
+      views: 1000,
+      likes: 50,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts metadata update", () => {
+    const result = UpdatePublishingRecordSchema.safeParse({
+      post_url: "https://douyin.com/v/new",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects negative metrics", () => {
+    expect(UpdatePublishingRecordSchema.safeParse({ views: -1 }).success).toBe(false);
+    expect(UpdatePublishingRecordSchema.safeParse({ deals: -5 }).success).toBe(false);
+  });
+
+  it("rejects extra fields", () => {
+    expect(UpdatePublishingRecordSchema.safeParse({ extra: true }).success).toBe(false);
+  });
+});
+
+// ============================================================
+// PublishingRecordsQuerySchema
+// ============================================================
+
+describe("PublishingRecordsQuerySchema", () => {
+  it("uses defaults when empty", () => {
+    const result = PublishingRecordsQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.limit).toBe(20);
+      expect(result.data.offset).toBe(0);
+    }
+  });
+
+  it("parses platform and project filters", () => {
+    const result = PublishingRecordsQuerySchema.safeParse({
+      platform: "douyin",
+      content_project_id: "a0000000-0000-0000-0000-000000000001",
+      limit: "10",
+      offset: "5",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.platform).toBe("douyin");
+      expect(result.data.limit).toBe(10);
+      expect(result.data.offset).toBe(5);
+    }
+  });
+
+  it("rejects limit > 100", () => {
+    expect(PublishingRecordsQuerySchema.safeParse({ limit: "200" }).success).toBe(false);
   });
 });

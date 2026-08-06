@@ -191,3 +191,79 @@ export const UpdateContentVersionFeedbackSchema = z.object({
 }).strict();
 
 export type UpdateContentVersionFeedbackInput = z.infer<typeof UpdateContentVersionFeedbackSchema>;
+
+// ============================================================
+// Publishing Record Schema (response)
+// ============================================================
+
+export const PublishingRecordSchema = z.object({
+  id: z.string().uuid(),
+  workspace_id: z.string().uuid(),
+  content_project_id: z.string().uuid(),
+  content_version_id: z.string().uuid(),
+  platform: z.string(),
+  published_at: z.string(),
+  post_url: z.string().nullable(),
+  content_code: z.string().nullable(),
+  private_message_keyword: z.string().nullable(),
+  views: z.number().int().min(0),
+  likes: z.number().int().min(0),
+  favorites: z.number().int().min(0),
+  comments: z.number().int().min(0),
+  direct_messages: z.number().int().min(0),
+  qualified_leads: z.number().int().min(0),
+  viewings: z.number().int().min(0),
+  deals: z.number().int().min(0),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export type PublishingRecord = z.infer<typeof PublishingRecordSchema>;
+
+// ============================================================
+// Create Publishing Record
+// ============================================================
+
+export const CreatePublishingRecordSchema = z.object({
+  content_version_id: z.string().uuid(),
+  platform: ContentPlatformEnum,
+  published_at: z.string().min(1),
+  post_url: z.string().url().optional().or(z.literal("")),
+  content_code: z.string().max(200).optional(),
+  private_message_keyword: z.string().max(200).optional(),
+}).strict();
+
+export type CreatePublishingRecordInput = z.infer<typeof CreatePublishingRecordSchema>;
+
+// ============================================================
+// Update Publishing Record (metrics + metadata)
+// ============================================================
+
+export const UpdatePublishingRecordSchema = z.object({
+  post_url: z.string().url().optional().or(z.literal("")),
+  content_code: z.string().max(200).optional(),
+  private_message_keyword: z.string().max(200).optional(),
+  views: z.number().int().min(0).optional(),
+  likes: z.number().int().min(0).optional(),
+  favorites: z.number().int().min(0).optional(),
+  comments: z.number().int().min(0).optional(),
+  direct_messages: z.number().int().min(0).optional(),
+  qualified_leads: z.number().int().min(0).optional(),
+  viewings: z.number().int().min(0).optional(),
+  deals: z.number().int().min(0).optional(),
+}).strict();
+
+export type UpdatePublishingRecordInput = z.infer<typeof UpdatePublishingRecordSchema>;
+
+// ============================================================
+// Publishing Records Query
+// ============================================================
+
+export const PublishingRecordsQuerySchema = z.object({
+  platform: ContentPlatformEnum.optional(),
+  content_project_id: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+export type PublishingRecordsQueryInput = z.infer<typeof PublishingRecordsQuerySchema>;
