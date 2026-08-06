@@ -5,6 +5,10 @@ import { ArrowLeft, Lock, Loader2, ChevronDown, ChevronUp, Sparkles } from "luci
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { VoiceRecorder } from "@/components/ui/voice-recorder";
+import {
+  AiConfirmationCard,
+  type ExtractionField,
+} from "@/components/ui/ai-confirmation-card";
 
 const inputCls = (e?: boolean) => cn(
   "w-full rounded-md border bg-background px-3 py-2.5 text-sm min-h-[44px]",
@@ -19,6 +23,12 @@ export default function NewPropertyPage() {
   const [showPrivate, setShowPrivate] = React.useState(false);
   const [voiceText, setVoiceText] = React.useState<string | null>(null);
   const [aiExtracting, setAiExtracting] = React.useState(false);
+  const [confirmFields, setConfirmFields] = React.useState<ExtractionField[] | null>(null);
+  const [confirming, setConfirming] = React.useState(false);
+  const [extractionMeta, setExtractionMeta] = React.useState<{
+    missingFields: string[];
+    uncertainFields: Array<{ field: string; reason: string }>;
+  } | null>(null);
 
   const handleVoiceTranscription = (text: string) => {
     setVoiceText(text);
@@ -37,54 +47,122 @@ export default function NewPropertyPage() {
       const result = await resp.json();
       if (!resp.ok) {
         setError(result.error?.message ?? "AI 提取失败");
+        setAiExtracting(false);
         return;
       }
-      // Auto-fill form fields from AI extraction
-      const extraction = result.data?.extraction?.data;
+      const extraction = result.data?.extraction;
       if (extraction) {
-        const form = document.querySelector("form");
-        if (!form) return;
-        const fieldMap: Record<string, string | undefined> = {
-          title: extraction.title,
-          city: extraction.city,
-          district: extraction.district,
-          business_area: extraction.businessArea,
-          community_name: extraction.communityName,
-          address_text: extraction.addressText,
-          rental_type: extraction.rentalType,
-          monthly_rent: extraction.monthlyRent != null ? String(extraction.monthlyRent) : undefined,
-          deposit_terms: extraction.depositTerms,
-          bedrooms: extraction.bedrooms != null ? String(extraction.bedrooms) : undefined,
-          living_rooms: extraction.livingRooms != null ? String(extraction.livingRooms) : undefined,
-          bathrooms: extraction.bathrooms != null ? String(extraction.bathrooms) : undefined,
-          area_sqm: extraction.areaSqm != null ? String(extraction.areaSqm) : undefined,
-          floor: extraction.floor != null ? String(extraction.floor) : undefined,
-          available_from: extraction.availableFrom,
-        };
-        Object.entries(fieldMap).forEach(([name, value]) => {
-          if (value !== undefined && value !== null && value !== "") {
-            const el = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | null;
-            if (el) el.value = value;
-          }
+        const { data: facts, missingFields, uncertainFields } = extraction;
+        const uncertainKeys = new Set(
+          (uncertainFields as Array<{ field: string; reason: string }>)?.map(
+            (u) => u.field
+          ) ?? []
+        );
+        const missingKeys = new Set(missingFields ?? []);
+
+        // Build confirmation fields from extraction result
+        const fieldDefs: Array<{ key: string; label: string; mapKey?: string }> = [
+          { key: "title", label: "房源标题" },
+          { key: "city", label: "城市" },
+          { key: "district", label: "区域" },
+          { key: "businessArea", label: "商圈" },
+          { key: "communityName", label: "小区名称" },
+          { key: "addressText", label: "大致地址" },
+          { key: "rentalType", label: "租赁方式" },
+          { key: "monthlyRent", label: "月租" },
+          { key: "depositTerms", label: "押金方式" },
+          { key: "bedrooms", label: "卧室数" },
+          { key: "livingRooms", label: "客厅数" },
+          { key: "bathrooms", label: "卫生间数" },
+          { key: "areaSqm", label: "面积" },
+          { key: "floor", label: "楼层" },
+          { key: "availableFrom", label: "可入住时间" },
+          { key: "hasElevator", label: "有电梯" },
+          { key: "petsAllowed", label: "可养宠物" },
+          { key: "cookingAllowed", label: "可做饭" },
+          { key: "orientation", label: "朝向" },
+          { key: "decoration", label: "装修" },
+          { key: "subwayText", label: "地铁" },
+        ];
+
+        const fields: ExtractionField[] = fieldDefs.map((def) => {
+          const val =
+            (facts as Record<string, unknown>)[def.key];
+          const isMissing = missingKeys.has(def.key) || (val === null || val === undefined || val === "");
+          const isUncertain = uncertainKeys.has(def.key);
+
+          return {
+            key: def.key,
+            label: def.label,
+            value: val ?? "",
+            confirmed: !isMissing && !isUncertain,
+            modified: false,
+            uncertain: isUncertain,
+            uncertainReason: (uncertainFields as Array<{ field: string; reason: string }>)?.find(
+              (u) => u.field === def.key
+            )?.reason,
+            missing: isMissing,
+            source: "AI 提取",
+            sensitive: false,
+          };
         });
-        if (extraction.hasElevator) {
-          const el = form.elements.namedItem("has_elevator") as HTMLInputElement | null;
-          if (el) el.checked = true;
+
+        // Mark known sensitive fields
+        const sensitiveKeys = new Set([
+          "ownerName", "ownerPhone", "exactAddress", "keyLocation",
+        ]);
+        for (const f of fields) {
+          if (sensitiveKeys.has(f.key)) f.sensitive = true;
         }
-        if (extraction.petsAllowed) {
-          const el = form.elements.namedItem("pets_allowed") as HTMLInputElement | null;
-          if (el) el.checked = true;
-        }
-        if (extraction.cookingAllowed) {
-          const el = form.elements.namedItem("cooking_allowed") as HTMLInputElement | null;
-          if (el) el.checked = true;
-        }
+
+        setConfirmFields(fields);
+        setExtractionMeta({ missingFields: missingFields ?? [], uncertainFields: uncertainFields ?? [] });
       }
     } catch {
       setError("AI 提取失败，请检查网络后重试");
     } finally {
       setAiExtracting(false);
     }
+  };
+
+  const handleConfirmFields = (confirmedValues: Record<string, unknown>) => {
+    setConfirming(true);
+    const form = document.querySelector("form");
+    if (!form) { setConfirming(false); return; }
+
+    const keyToFormName: Record<string, string> = {
+      title: "title", city: "city", district: "district",
+      businessArea: "business_area", communityName: "community_name",
+      addressText: "address_text", rentalType: "rental_type",
+      monthlyRent: "monthly_rent", depositTerms: "deposit_terms",
+      bedrooms: "bedrooms", livingRooms: "living_rooms",
+      bathrooms: "bathrooms", areaSqm: "area_sqm",
+      floor: "floor", availableFrom: "available_from",
+      hasElevator: "has_elevator", petsAllowed: "pets_allowed",
+      cookingAllowed: "cooking_allowed",
+    };
+
+    for (const [key, value] of Object.entries(confirmedValues)) {
+      const formName = keyToFormName[key];
+      if (!formName) continue;
+      if (typeof value === "boolean") {
+        const el = form.elements.namedItem(formName) as HTMLInputElement | null;
+        if (el) el.checked = value;
+      } else if (value !== null && value !== undefined && value !== "") {
+        const el = form.elements.namedItem(formName) as HTMLInputElement | HTMLSelectElement | null;
+        if (el) el.value = String(value);
+      }
+    }
+    setConfirmFields(null);
+    setVoiceText(null);
+    setExtractionMeta(null);
+    setConfirming(false);
+  };
+
+  const handleDismissExtraction = () => {
+    setConfirmFields(null);
+    setVoiceText(null);
+    setExtractionMeta(null);
   };
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -130,7 +208,19 @@ export default function NewPropertyPage() {
             onTranscription={handleVoiceTranscription}
             purpose="property"
           />
-          {voiceText && (
+          {confirmFields ? (
+            <AiConfirmationCard
+              fields={confirmFields}
+              onConfirm={handleConfirmFields}
+              onDismiss={handleDismissExtraction}
+              confirming={confirming}
+              statusMessage={
+                extractionMeta?.uncertainFields.length
+                  ? `AI 提取完成，${extractionMeta.uncertainFields.length} 个字段需确认`
+                  : "AI 提取完成，请确认后填充表单"
+              }
+            />
+          ) : voiceText ? (
             <div className="space-y-2">
               <div className="p-3 rounded bg-muted/50 text-sm whitespace-pre-wrap max-h-32 overflow-y-auto">
                 {voiceText}
@@ -148,7 +238,7 @@ export default function NewPropertyPage() {
                 )}
               </button>
             </div>
-          )}
+          ) : null}
         </section>
 
         <section className="space-y-4 rounded-lg border p-4">
