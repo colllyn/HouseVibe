@@ -283,6 +283,38 @@ describe("POST /api/content/projects/[id]/publishing", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 404 when project not found (P1-3)", async () => {
+    setupAdmin();
+    mockChainResult.mockResolvedValueOnce({ data: { workspace_id: WORKSPACE_ID }, error: null });
+    mockChainResult.mockResolvedValueOnce({ data: null, error: { message: "not found" } });
+    const { POST } = await getHandlers();
+    const req = new Request(`http://localhost/api/content/projects/${PROJECT_ID}/publishing`, {
+      method: "POST",
+      body: JSON.stringify(validBody),
+    });
+    const res = await POST(req as unknown as NextRequest, {
+      params: Promise.resolve({ id: PROJECT_ID }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 500 on database error (P1-6)", async () => {
+    setupAdmin();
+    mockChainResult.mockResolvedValueOnce({ data: { workspace_id: WORKSPACE_ID }, error: null });
+    mockChainResult.mockResolvedValueOnce({ data: { id: PROJECT_ID, platform: "xiaohongshu" }, error: null });
+    mockChainResult.mockResolvedValueOnce({ data: { id: VERSION_ID }, error: null });
+    mockChainResult.mockResolvedValueOnce({ data: null, error: { message: "connection refused" } });
+    const { POST } = await getHandlers();
+    const req = new Request(`http://localhost/api/content/projects/${PROJECT_ID}/publishing`, {
+      method: "POST",
+      body: JSON.stringify(validBody),
+    });
+    const res = await POST(req as unknown as NextRequest, {
+      params: Promise.resolve({ id: PROJECT_ID }),
+    });
+    expect(res.status).toBe(500);
+  });
+
   it("returns 201 with created record", async () => {
     setupAdmin();
     mockChainResult.mockResolvedValueOnce({ data: { workspace_id: WORKSPACE_ID }, error: null });
@@ -322,6 +354,20 @@ describe("PATCH /api/content/projects/[id]/publishing/[recordId]", () => {
       params: Promise.resolve({ id: PROJECT_ID, recordId: RECORD_ID }),
     });
     expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when no workspace member (P0-1)", async () => {
+    setupUser("user-1");
+    mockChainResult.mockResolvedValue({ data: null, error: { message: "not found" } });
+    const { PATCH } = await getDetailHandlers();
+    const req = new Request(`http://localhost/api/content/projects/${PROJECT_ID}/publishing/${RECORD_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ views: 100 }),
+    });
+    const res = await PATCH(req as unknown as NextRequest, {
+      params: Promise.resolve({ id: PROJECT_ID, recordId: RECORD_ID }),
+    });
+    expect(res.status).toBe(403);
   });
 
   it("returns 403 when missing content_factory", async () => {

@@ -503,9 +503,20 @@ describe("PublishingRecordSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects negative metrics", () => {
+  it("rejects negative metrics on all 8 fields (P0-2)", () => {
     expect(PublishingRecordSchema.safeParse({ ...validRecord, views: -1 }).success).toBe(false);
     expect(PublishingRecordSchema.safeParse({ ...validRecord, likes: -1 }).success).toBe(false);
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, favorites: -1 }).success).toBe(false);
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, comments: -1 }).success).toBe(false);
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, direct_messages: -1 }).success).toBe(false);
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, qualified_leads: -1 }).success).toBe(false);
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, viewings: -1 }).success).toBe(false);
+    expect(PublishingRecordSchema.safeParse({ ...validRecord, deals: -1 }).success).toBe(false);
+  });
+
+  it("rejects missing required fields", () => {
+    const { id: _id, ...rest } = validRecord;
+    expect(PublishingRecordSchema.safeParse(rest).success).toBe(false);
   });
 
   it("rejects non-UUID id", () => {

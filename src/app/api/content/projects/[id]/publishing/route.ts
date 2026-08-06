@@ -60,16 +60,19 @@ export async function GET(
       offset: url.searchParams.get("offset") ?? undefined,
     });
 
+    if (!query.success) return jsonResponse(
+      { data: null, error: { code: "VALIDATION_FAILED", message: "查询参数无效", details: query.error.flatten() } },
+      { status: 400 }
+    );
+
     let dbQuery = client.from("publishing_records")
       .select("*")
       .eq("content_project_id", id)
       .eq("workspace_id", member.workspace_id)
       .order("published_at", { ascending: false });
 
-    if (query.success) {
-      if (query.data.platform) dbQuery = dbQuery.eq("platform", query.data.platform);
-      dbQuery = dbQuery.range(query.data.offset, query.data.offset + query.data.limit - 1);
-    }
+    if (query.data.platform) dbQuery = dbQuery.eq("platform", query.data.platform);
+    dbQuery = dbQuery.range(query.data.offset, query.data.offset + query.data.limit - 1);
 
     const { data, error } = await dbQuery;
 

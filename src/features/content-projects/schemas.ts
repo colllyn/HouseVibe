@@ -201,7 +201,7 @@ export const PublishingRecordSchema = z.object({
   workspace_id: z.string().uuid(),
   content_project_id: z.string().uuid(),
   content_version_id: z.string().uuid(),
-  platform: z.string(),
+  platform: ContentPlatformEnum,
   published_at: z.string(),
   post_url: z.string().nullable(),
   content_code: z.string().nullable(),
@@ -227,7 +227,7 @@ export type PublishingRecord = z.infer<typeof PublishingRecordSchema>;
 export const CreatePublishingRecordSchema = z.object({
   content_version_id: z.string().uuid(),
   platform: ContentPlatformEnum,
-  published_at: z.string().min(1),
+  published_at: z.string().datetime({ message: "发布时间格式无效" }),
   post_url: z.string().url().optional().or(z.literal("")),
   content_code: z.string().max(200).optional(),
   private_message_keyword: z.string().max(200).optional(),

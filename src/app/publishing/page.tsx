@@ -57,6 +57,7 @@ export default function PublishingPage() {
   const [formMode, setFormMode] = useState<FormMode>("idle");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Create form state
   const [form, setForm] = useState({
@@ -144,6 +145,7 @@ export default function PublishingPage() {
   const handleCreate = async () => {
     if (!form.content_project_id || !form.content_version_id) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const body: Record<string, unknown> = {
         content_version_id: form.content_version_id,
@@ -162,8 +164,13 @@ export default function PublishingPage() {
       if (res.ok) {
         resetForm();
         await fetchData();
+      } else {
+        const json = await res.json().catch(() => null);
+        setSaveError(json?.error?.message ?? "保存失败，请重试");
       }
-    } catch { /* ignore */ }
+    } catch {
+      setSaveError("网络错误，请重试");
+    }
     setSaving(false);
   };
 
@@ -174,6 +181,7 @@ export default function PublishingPage() {
   const handleUpdateMetrics = async (recordId: string, projectId: string) => {
     if (Object.keys(editMetrics).length === 0) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await fetch(`/api/content/projects/${projectId}/publishing/${recordId}`, {
         method: "PATCH",
@@ -184,8 +192,13 @@ export default function PublishingPage() {
         setEditingId(null);
         setEditMetrics({});
         await fetchData();
+      } else {
+        const json = await res.json().catch(() => null);
+        setSaveError(json?.error?.message ?? "更新失败，请重试");
       }
-    } catch { /* ignore */ }
+    } catch {
+      setSaveError("网络错误，请重试");
+    }
     setSaving(false);
   };
 
@@ -382,6 +395,9 @@ export default function PublishingPage() {
             </label>
           </div>
 
+          {saveError && (
+            <p className="mt-3 text-xs text-destructive">{saveError}</p>
+          )}
           <div className="mt-4 flex gap-2">
             <button
               onClick={handleCreate}
