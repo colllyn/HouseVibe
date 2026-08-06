@@ -32,5 +32,12 @@ export const adminNavigation: AdminNavItem[] = [
     order: 3,
     owner: 'data-security-engineer',
   },
+  {
+    label: '合规词库',
+    href: '/admin/compliance',
+    icon: 'ShieldCheck',
+    order: 4,
+    owner: 'ai-deepseek-engineer',
+  },
   // Future: ai-deepseek-engineer items for /admin/ai-usage, etc.
 ];
