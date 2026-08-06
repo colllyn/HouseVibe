@@ -41,11 +41,14 @@ function formatPct(n: number): string {
 export default function AdminAiCorrectionsPage() {
   const [state, setState] = useState<PageState>({ status: "loading", summary: null });
   const [days, setDays] = useState(30);
+  const [feature, setFeature] = useState<string>("");
 
-  const fetchData = useCallback(async (d: number) => {
+  const fetchData = useCallback(async (d: number, f: string) => {
     setState({ status: "loading", summary: null });
     try {
-      const res = await fetch(`/api/admin/ai-corrections?days=${d}`);
+      const params = new URLSearchParams({ days: String(d) });
+      if (f) params.set("feature", f);
+      const res = await fetch(`/api/admin/ai-corrections?${params.toString()}`);
       const json = await res.json();
       if (!res.ok || json.error) {
         setState({ status: "error", message: json.error?.message ?? "加载失败", summary: null });
@@ -58,8 +61,8 @@ export default function AdminAiCorrectionsPage() {
   }, []);
 
   useEffect(() => {
-    fetchData(days);
-  }, [days, fetchData]);
+    fetchData(days, feature);
+  }, [days, feature, fetchData]);
 
   // ============================================================
   // Loading state
@@ -92,7 +95,7 @@ export default function AdminAiCorrectionsPage() {
         <div className="mt-6 rounded-lg border border-destructive/20 bg-destructive/5 p-6 text-center">
           <p className="text-sm text-destructive">{state.message}</p>
           <button
-            onClick={() => fetchData(days)}
+            onClick={() => fetchData(days, feature)}
             className="mt-3 rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
           >
             重试
@@ -117,7 +120,7 @@ export default function AdminAiCorrectionsPage() {
       </p>
 
       {/* ================================================================
-          Period selector
+          Period selector + feature filter
           ================================================================ */}
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <div className="flex rounded-md border">
@@ -133,6 +136,17 @@ export default function AdminAiCorrectionsPage() {
             </button>
           ))}
         </div>
+        <select
+          value={feature}
+          onChange={(e) => setFeature(e.target.value)}
+          className="rounded-md border px-3 py-1.5 text-xs"
+          aria-label="按功能筛选"
+        >
+          <option value="">全部功能</option>
+          {Object.entries(FEATURE_LABELS).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
       </div>
 
       {/* ================================================================
