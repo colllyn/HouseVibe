@@ -376,6 +376,13 @@ export interface DeepSeekTextProvider {
 export interface VisionAnalysisInput extends AIRequestContext {
   /** Service-generated short-lived signed URLs (not client-supplied) */
   imageUrls: string[];
+  /**
+   * Server-generated correlation IDs, one per imageUrl, in the same order.
+   * The provider MUST echo each correlationId back in the corresponding
+   * SingleImageResult so the handler can safely correlate results to input
+   * images without relying on positional ordering.
+   */
+  correlationIds: string[];
   /** Safe property facts for visual cross-checking */
   propertyFacts: RedactedPropertyFacts;
   /** Schema version for output validation */
@@ -383,7 +390,10 @@ export interface VisionAnalysisInput extends AIRequestContext {
 }
 
 export interface SingleImageResult {
-  mediaId: string;
+  /** Server-generated correlationId echoed back by the provider */
+  correlationId: string;
+  /** Deprecated: kept for backward compat. Use correlationId for mapping. */
+  mediaId?: string;
   aiLabels: PropertyMediaAiLabel;
   status: "completed" | "failed";
   error?: string;

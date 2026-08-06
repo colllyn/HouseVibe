@@ -43,9 +43,11 @@ function mockEnv(overrides: Record<string, string | undefined> = {}) {
 }
 
 function makeInput(overrides?: Partial<VisionAnalysisInput>): VisionAnalysisInput {
+  const imageUrls = overrides?.imageUrls ?? ["https://storage.example.com/img1.jpg"];
   return {
     requestId: "test-req-1",
-    imageUrls: ["https://storage.example.com/img1.jpg"],
+    imageUrls,
+    correlationIds: imageUrls.map((_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`),
     propertyFacts: {},
     schemaVersion: "1.0",
     promptVersion: "1",
@@ -152,7 +154,7 @@ describe("DeepSeekVisionProvider (Mock via test factory)", () => {
     const result = await provider.analyzePropertyImages(makeInput());
 
     for (const mr of result.mediaResults) {
-      expect(mr.mediaId).toBeDefined();
+      expect(mr.correlationId).toBeDefined();
       expect(mr.status).toMatch(/completed|failed/);
       expect(mr.aiLabels.sceneType).toBeDefined();
       expect(mr.aiLabels.confidence).toBeGreaterThanOrEqual(0);
@@ -251,6 +253,7 @@ describe("DeepSeekVisionProvider SSRF Protection", () => {
               content: JSON.stringify({
                 mediaResults: [
                   {
+                    correlationId: "00000000-0000-0000-0000-000000000000",
                     mediaId: "img-1",
                     aiLabels: {
                       sceneType: "bedroom",

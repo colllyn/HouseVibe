@@ -48,7 +48,8 @@ const MediaLabelSchema = z.object({
 const VisionResponseSchema = z.object({
   mediaResults: z.array(
     z.object({
-      mediaId: z.string(),
+      correlationId: z.string().uuid(),
+      mediaId: z.string().optional(),
       aiLabels: MediaLabelSchema,
       status: z.enum(["completed", "failed"]),
       error: z.string().optional(),
@@ -169,6 +170,7 @@ export function createMockVisionProvider(): DeepSeekVisionProvider {
 
       return {
         mediaResults: input.imageUrls.map((_url, i) => ({
+          correlationId: input.correlationIds[i] ?? `mock-correlation-${i}`,
           mediaId: `mock-media-${i}`,
           aiLabels: mockLabel(),
           status: "completed" as const,
@@ -226,12 +228,19 @@ function createRealVisionProvider(
         validateImageUrl(url, requestId);
       }
 
-      // Build the vision prompt
+      // Build the vision prompt with correlation IDs for safe result mapping
+      const correlationsDesc = input.correlationIds
+        .map((cid, i) => `Image ${i + 1} correlationId: ${cid}`)
+        .join("\n");
       const factsStr = JSON.stringify(input.propertyFacts);
       const prompt = `Analyze the following property images. The listing describes: ${factsStr}.
+
+Each image has a correlationId that you MUST include in your response:
+${correlationsDesc}
+
 For each image, identify: scene_type, styles, visible_features, condition, lighting, appliances, confidence, evidence, uncertain_labels.
 Cross-check the listing facts against what you see. For each fact, state whether it is: confirmed_visual_support, not_verified_by_images, insufficient_evidence, weak_visual_support, or possible_conflict.
-Return a JSON object with: mediaResults (array of per-image analysis), visualSummary (string), factChecks (array of cross-checks).`;
+Return a JSON object with: mediaResults (array of per-image analysis, each MUST include the exact correlationId provided above), visualSummary (string), factChecks (array of cross-checks).`;
 
       // Build image content array
       const imageContents = input.imageUrls.map((url) => ({

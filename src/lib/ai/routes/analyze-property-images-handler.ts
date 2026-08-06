@@ -192,27 +192,77 @@ export function createAnalyzeImagesHandler(
       }
 
       const imageUrls = correlated.map((c) => c.signedUrl);
-      let result;
-      try {
-        result = await provider.analyzePropertyImages({
-          requestId, imageUrls,
-          propertyFacts: { title: (property as { title: string }).title },
-          schemaVersion: "1.0", promptVersion: "1", modelName: "deepseek-vl2",
-        }, request.signal);
-      } catch (providerErr) {
-        if (reservationId) { try { await client.rpc("release_ai_quota", { p_user_id: userId ?? "", p_workspace_id: workspaceId, p_idempotency_key: idempotencyKey, p_reason: "provider_error" }); } catch { /* */ } }
-        throw providerErr;
+      const correlationIds = correlated.map((c) => c.correlationId);
+      const result = await provider.analyzePropertyImages({
+        requestId, imageUrls, correlationIds,
+        propertyFacts: { title: (property as { title: string }).title },
+        schemaVersion: "1.0", promptVersion: "1", modelName: "deepseek-vl2",
+      }, request.signal);
+
+      // 10. Validate correlationId integrity before mapping
+      const correlationToMedia = new Map(correlated.map((c) => [c.correlationId, c.mediaId]));
+      const expectedIds = new Set(correlationIds);
+
+      // 10a. Check result count matches input count
+      if (result.mediaResults.length !== correlated.length) {
+        if (reservationId) { try { await client.rpc("release_ai_quota", { p_user_id: userId ?? "", p_workspace_id: workspaceId, p_idempotency_key: idempotencyKey, p_reason: "correlation_mismatch" }); } catch { /* */ } }
+        return jsonResponse({
+          data: null,
+          error: { code: "INTERNAL_ERROR", message: `视觉分析结果数量不匹配: 期望 ${correlated.length}, 收到 ${result.mediaResults.length}` },
+        }, { status: 500, headers: h });
       }
 
-      // 10. Map results by index to mediaIds (order preserved by correlated array)
-      const mediaLabels = result.mediaResults.map((mr, i) => {
-        const realMediaId = correlated[i]?.mediaId ?? mr.mediaId;
-        return {
+      // 10b. Validate every result has a valid, unique correlationId
+      const seenCorrelationIds = new Set<string>();
+      const mediaLabels: Array<{ mediaId: string; aiLabels: typeof result.mediaResults[0]["aiLabels"]; aiAnalysisStatus: string }> = [];
+
+      for (const mr of result.mediaResults) {
+        const cid = mr.correlationId;
+
+        // Missing correlationId → fail
+        if (!cid) {
+          if (reservationId) { try { await client.rpc("release_ai_quota", { p_user_id: userId ?? "", p_workspace_id: workspaceId, p_idempotency_key: idempotencyKey, p_reason: "missing_correlation_id" }); } catch { /* */ } }
+          return jsonResponse({
+            data: null,
+            error: { code: "INTERNAL_ERROR", message: "视觉分析结果缺少 correlationId" },
+          }, { status: 500, headers: h });
+        }
+
+        // Unknown correlationId → fail
+        if (!expectedIds.has(cid)) {
+          if (reservationId) { try { await client.rpc("release_ai_quota", { p_user_id: userId ?? "", p_workspace_id: workspaceId, p_idempotency_key: idempotencyKey, p_reason: "unknown_correlation_id" }); } catch { /* */ } }
+          return jsonResponse({
+            data: null,
+            error: { code: "INTERNAL_ERROR", message: `视觉分析结果包含未知 correlationId: ${cid}` },
+          }, { status: 500, headers: h });
+        }
+
+        // Duplicate correlationId → fail
+        if (seenCorrelationIds.has(cid)) {
+          if (reservationId) { try { await client.rpc("release_ai_quota", { p_user_id: userId ?? "", p_workspace_id: workspaceId, p_idempotency_key: idempotencyKey, p_reason: "duplicate_correlation_id" }); } catch { /* */ } }
+          return jsonResponse({
+            data: null,
+            error: { code: "INTERNAL_ERROR", message: `视觉分析结果包含重复 correlationId: ${cid}` },
+          }, { status: 500, headers: h });
+        }
+        seenCorrelationIds.add(cid);
+
+        // Safe mapping via correlationId → mediaId
+        const realMediaId = correlationToMedia.get(cid);
+        if (!realMediaId) {
+          // Should not happen after validation above, but safety check
+          if (reservationId) { try { await client.rpc("release_ai_quota", { p_user_id: userId ?? "", p_workspace_id: workspaceId, p_idempotency_key: idempotencyKey, p_reason: "correlation_lookup_failed" }); } catch { /* */ } }
+          return jsonResponse({
+            data: null,
+            error: { code: "INTERNAL_ERROR", message: "correlationId 映射失败" },
+          }, { status: 500, headers: h });
+        }
+        mediaLabels.push({
           mediaId: realMediaId,
           aiLabels: mr.aiLabels,
           aiAnalysisStatus: mr.status === "completed" ? "completed" : "failed",
-        };
-      });
+        });
+      }
 
       // 11. Atomic persistence: save labels + visual data + settle quota in one RPC
       const usage = result.usage ?? { inputTokens: 0, outputTokens: 0, estimatedCostUsd: 0 };
