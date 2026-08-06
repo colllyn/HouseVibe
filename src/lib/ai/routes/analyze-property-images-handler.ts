@@ -13,16 +13,18 @@ import { createClient } from "@/lib/supabase/server";
 import type { DeepSeekVisionProvider, PropertyVisionResult } from "@/lib/ai/types";
 import { DeepSeekProviderError } from "@/lib/ai/types";
 import { createDeepSeekVisionProvider } from "@/lib/ai/providers/deepseek-vision-provider";
+import { hasFeature } from "@/features/access-control/guards";
 
 // ============================================================
 // Request Schema
 // ============================================================
 
-const AnalyzeImagesRequestSchema = z.object({
-  propertyId: z.string().uuid(),
-  propertyMediaIds: z.array(z.string().uuid()).min(1).max(8),
-  requestId: z.string().optional(),
-});
+const AnalyzeImagesRequestSchema = z
+  .object({
+    propertyId: z.string().uuid(),
+    propertyMediaIds: z.array(z.string().uuid()).min(1).max(8),
+  })
+  .strict();
 
 // ============================================================
 // Helpers
@@ -97,12 +99,21 @@ export function createAnalyzeImagesHandler(
 
       const workspaceId = member.workspace_id;
 
-      // 3. Parse body
+      // 3. Feature entitlement — must have ai_data_extraction
+      const entitled = await hasFeature("ai_data_extraction");
+      if (!entitled) {
+        return jsonResponse(
+          { data: null, error: { code: "FEATURE_NOT_ALLOWED", message: "需要 ai_data_extraction 功能授权" } },
+          { status: 403, headers: h }
+        );
+      }
+
+      // 4. Parse body
       let body: unknown;
       try { body = await request.json(); } catch {
         return jsonResponse(
           { data: null, error: { code: "VALIDATION_FAILED", message: "请求体不是有效的 JSON" } },
-          { status: 422, headers: h }
+          { status: 400, headers: h }
         );
       }
 
@@ -110,12 +121,12 @@ export function createAnalyzeImagesHandler(
       if (!parsed.success) {
         return jsonResponse(
           { data: null, error: { code: "VALIDATION_FAILED", message: parsed.error.issues[0]?.message ?? "参数无效" } },
-          { status: 422, headers: h }
+          { status: 400, headers: h }
         );
       }
 
-      const { propertyId, propertyMediaIds, requestId } = parsed.data;
-      const reqId = requestId ?? crypto.randomUUID();
+      const { propertyId, propertyMediaIds } = parsed.data;
+      const reqId = crypto.randomUUID();
 
       // 4. Verify property ownership (belongs to user's workspace)
       const { data: property } = await client
@@ -153,7 +164,7 @@ export function createAnalyzeImagesHandler(
       if (missing.length > 0) {
         return jsonResponse(
           { data: null, error: { code: "VALIDATION_FAILED", message: `部分媒体文件不存在: ${missing.join(", ")}` } },
-          { status: 422, headers: h }
+          { status: 400, headers: h }
         );
       }
 
@@ -221,14 +232,14 @@ export function createAnalyzeImagesHandler(
         const realMediaId = propertyMediaIds[idx];
         if (!realMediaId) continue;
 
-        const { error: updateErr } = await client
+        await client
           .from("property_media")
-          .update({ ai_labels: mr.aiLabels })
+          .update({
+            ai_labels: mr.aiLabels,
+            ai_analysis_status: "completed",
+            ai_analyzed_at: new Date().toISOString(),
+          })
           .eq("id", realMediaId);
-
-        if (updateErr) {
-          console.error(`[analyze-images] Failed to save ai_labels for media ${realMediaId}: ${updateErr.message}`);
-        }
       }
 
       // 9. Save visual_summary and visual_fact_flags to properties
@@ -249,9 +260,11 @@ export function createAnalyzeImagesHandler(
         {
           data: {
             requestId: reqId,
+            model: "deepseek-vl2",
             mediaResults: result.mediaResults.map((mr, i) => ({
               ...mr,
               mediaId: propertyMediaIds[i] ?? mr.mediaId,
+              aiAnalysisStatus: "completed",
             })),
             visualSummary: result.visualSummary,
             factChecks: result.factChecks,
