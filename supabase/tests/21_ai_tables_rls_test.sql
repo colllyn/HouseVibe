@@ -12,7 +12,7 @@
 
 BEGIN;
 
-SELECT plan(30);
+SELECT plan(39);
 
 SET LOCAL search_path TO public, extensions;
 SET LOCAL client_min_messages TO warning;
@@ -295,67 +295,140 @@ SELECT lives_ok(
 );
 
 -- =============================================================================
+-- ai_runtime_config RPC bypass tests
+-- SECURITY DEFINER RPCs must enforce admin checks (P3-RLS-002 reviewer finding)
+-- =============================================================================
+
+-- 21: Normal user cannot call get_runtime_config (RPC must enforce admin check)
+SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2","role":"authenticated"}';
+SELECT throws_ok(
+  $$SELECT public.get_runtime_config('text')$$,
+  '42501', NULL,
+  '21: normal user cannot call get_runtime_config (admin check enforced)'
+);
+
+-- 22: System admin can call get_runtime_config
+SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1","role":"authenticated"}';
+SELECT lives_ok(
+  $$SELECT public.get_runtime_config('text')$$,
+  '22: system admin can call get_runtime_config'
+);
+
+-- 23: Normal user cannot call update_circuit_state (RPC must enforce admin check)
+SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2","role":"authenticated"}';
+SELECT throws_ok(
+  $$SELECT public.update_circuit_state('text', true, false)$$,
+  '42501', NULL,
+  '23: normal user cannot call update_circuit_state (admin check enforced)'
+);
+
+-- 24: System admin can call update_circuit_state
+SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1","role":"authenticated"}';
+SELECT lives_ok(
+  $$SELECT public.update_circuit_state('text', true, false)$$,
+  '24: system admin can call update_circuit_state'
+);
+
+-- =============================================================================
 -- ai_correction_logs RLS (contract §4.20: user reads own, no direct writes)
 -- =============================================================================
 
--- 21: User A can read own correction logs
+-- 25: User A can read own correction logs
 SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2","role":"authenticated"}';
 SELECT is(
   (SELECT count(*)::integer FROM public.ai_correction_logs),
   1,
-  '21: user can read own ai_correction_logs'
+  '25: user can read own ai_correction_logs'
 );
 
--- 22: User B cannot read User A's correction logs
+-- 26: User B cannot read User A's correction logs
 SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3","role":"authenticated"}';
 SELECT is(
   (SELECT count(*)::integer FROM public.ai_correction_logs WHERE user_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2'),
   0,
-  '22: user B cannot read user A ai_correction_logs'
+  '26: user B cannot read user A ai_correction_logs'
 );
 
--- 23: Normal user cannot insert ai_correction_logs
+-- 27: Normal user cannot insert ai_correction_logs
 SELECT throws_ok(
   $$INSERT INTO public.ai_correction_logs (user_id, workspace_id, feature, request_id, entity_type, entity_id, original_output, corrected_output, diff)
     VALUES ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1',
             'content_factory', 'dddddddd-dddd-dddd-dddd-dddddddddd03', 'content', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeee3',
             '{}'::jsonb, '{}'::jsonb, '{}'::jsonb)$$,
   '42501', NULL,
-  '23: normal user cannot insert ai_correction_logs'
+  '27: normal user cannot insert ai_correction_logs'
 );
 
--- 24: System admin can read all correction logs
+-- 28: System admin can read all correction logs
 SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1","role":"authenticated"}';
 SELECT ok(
   (SELECT count(*)::integer FROM public.ai_correction_logs) >= 2,
-  '24: system admin can read all ai_correction_logs'
+  '28: system admin can read all ai_correction_logs'
 );
 
 -- =============================================================================
 -- Anon access denied
 -- =============================================================================
 
--- 25: Anon cannot read ai_model_pricing
+-- 29: Anon cannot read ai_model_pricing
 SET LOCAL ROLE anon;
 SET LOCAL "request.jwt.claims" TO '';
 SELECT throws_ok(
   $$SELECT count(*) FROM public.ai_model_pricing$$,
   '42501', NULL,
-  '25: anon denied ai_model_pricing'
+  '29: anon denied ai_model_pricing'
 );
 
--- 26: Anon cannot read ai_usage_logs
+-- 30: Anon cannot read ai_usage_logs
 SELECT throws_ok(
   $$SELECT count(*) FROM public.ai_usage_logs$$,
   '42501', NULL,
-  '26: anon denied ai_usage_logs'
+  '30: anon denied ai_usage_logs'
 );
 
--- 27: Anon cannot read ai_correction_logs
+-- 31: Anon cannot read ai_correction_logs
 SELECT throws_ok(
   $$SELECT count(*) FROM public.ai_correction_logs$$,
   '42501', NULL,
-  '27: anon denied ai_correction_logs'
+  '31: anon denied ai_correction_logs'
+);
+
+-- 32: Anon cannot read ai_runtime_config
+SELECT throws_ok(
+  $$SELECT count(*) FROM public.ai_runtime_config$$,
+  '42501', NULL,
+  '32: anon denied ai_runtime_config'
+);
+
+-- 33: Anon cannot read ai_user_limits
+SELECT throws_ok(
+  $$SELECT count(*) FROM public.ai_user_limits$$,
+  '42501', NULL,
+  '33: anon denied ai_user_limits'
+);
+
+-- 34: Anon cannot read ai_runtime_config via RPC
+SET LOCAL "request.jwt.claims" TO '';
+SELECT throws_ok(
+  $$SELECT public.get_runtime_config('text')$$,
+  '42501', NULL,
+  '34: anon denied get_runtime_config RPC'
+);
+
+-- 35: Anon cannot call update_circuit_state via RPC
+SELECT throws_ok(
+  $$SELECT public.update_circuit_state('text', true, false)$$,
+  '42501', NULL,
+  '35: anon denied update_circuit_state RPC'
+);
+
+-- 36: Outsider (authenticated, no workspace) cannot read ai_runtime_config via RPC
+SET LOCAL ROLE authenticated;
+SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4","role":"authenticated"}';
+SELECT throws_ok(
+  $$SELECT public.get_runtime_config('text')$$,
+  '42501', NULL,
+  '36: outsider user denied get_runtime_config RPC (not system admin)'
 );
 
 SELECT finish();
