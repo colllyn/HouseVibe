@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { ClientQuerySchema } from "@/features/clients/schemas";
+import { computeFieldDiff, shouldRecordDiff } from "@/features/ai-corrections/diff";
 
 function urlOrigin(req: NextRequest): string {
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
@@ -252,7 +253,59 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Return contract-compliant response
+    // 6. P3-AI-012: Record AI correction diff if requestId is present
+    const requestId: string | undefined = body.requestId;
+    const aiOriginalOutput: Record<string, unknown> | undefined = body.aiOriginalOutput;
+    if (shouldRecordDiff(requestId) && requestId && aiOriginalOutput && result) {
+      const clientId = (result as Record<string, unknown>)?.id as string | undefined;
+      if (clientId) {
+        try {
+          // Build user-confirmed data from the body fields
+          const userConfirmed: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(body)) {
+            if (k !== "requestId" && k !== "aiOriginalOutput") {
+              userConfirmed[k] = v;
+            }
+          }
+
+          // Sanitize sensitive fields before storage
+          const EXCLUDED = new Set([
+            "phone", "wechat", "client_phone", "client_wechat",
+            "owner_phone", "owner_wechat", "exact_address", "key_location",
+            "internal_notes", "client_id_number",
+          ]);
+          function sanitize(obj: Record<string, unknown>): Record<string, unknown> {
+            const out: Record<string, unknown> = {};
+            for (const [k, v] of Object.entries(obj)) {
+              if (EXCLUDED.has(k)) continue;
+              out[k] = v;
+            }
+            return out;
+          }
+
+          const diffs = computeFieldDiff(aiOriginalOutput, userConfirmed);
+          if (diffs.length > 0) {
+            await client.rpc("record_ai_correction", {
+              p_user_id: user.id,
+              p_workspace_id: member.workspace_id,
+              p_feature: "ai_data_extraction",
+              p_request_id: requestId,
+              p_entity_type: "client",
+              p_entity_id: clientId,
+              p_prompt_version: "1",
+              p_model_name: "deepseek-v4-flash",
+              p_original_output: sanitize(aiOriginalOutput),
+              p_corrected_output: sanitize(userConfirmed),
+              p_diff: diffs,
+            });
+          }
+        } catch {
+          // Correction recording is best-effort; client creation already succeeded
+        }
+      }
+    }
+
+    // 7. Return contract-compliant response
     return jsonResponse(
       { data: result as Record<string, unknown>, error: null },
       { status: 201, headers: h },

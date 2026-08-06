@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { PropertyQuerySchema } from "@/features/properties/schemas";
+import { computeFieldDiff, shouldRecordDiff } from "@/features/ai-corrections/diff";
 
 const DEFERRED_PARAMS = new Set(["hasContent", "last_content_at", "last_published_at"]);
 
@@ -150,9 +151,20 @@ export async function POST(request: NextRequest) {
     const { data: member } = await client.from("workspace_members")
       .select("workspace_id").eq("user_id", user.id).eq("status", "active").limit(1).single();
     if (!member) return jsonResponse({ error: "无权限" }, { status: 403, headers: h });
+    const workspaceId = member.workspace_id;
     const body = await request.json();
+
+    // P3-AI-012: Extract AI correction fields
+    // NOTE: aiOriginalOutput is currently client-provided. Per ai-contract §9,
+    // the server should retrieve the original AI output from server-side storage
+    // keyed by requestId. This is a known limitation until server-side extraction
+    // result storage is implemented (tracked as P3-AI-012-STORAGE).
+    const requestId: string | undefined = body.requestId;
+    const aiOriginalOutput: Record<string, unknown> | undefined = body.aiOriginalOutput;
+    const shouldDiff = shouldRecordDiff(requestId);
+
     const { data: propertyId, error } = await client.rpc("create_property_with_private_details", {
-      p_workspace_id: member.workspace_id,
+      p_workspace_id: workspaceId,
       p_title: body.title, p_city: body.city, p_rental_type: body.rental_type ?? "whole_unit",
       p_district: body.district ?? null, p_business_area: body.business_area ?? null,
       p_community_name: body.community_name ?? null, p_address_text: body.address_text ?? null,
@@ -170,6 +182,53 @@ export async function POST(request: NextRequest) {
       p_key_location: body.key_location ?? null, p_internal_notes: body.internal_notes ?? null,
     });
     if (error) return jsonResponse({ error: "创建失败" }, { status: 500, headers: h });
+
+    // P3-AI-012: Record AI correction diff if requestId is present
+    if (shouldDiff && requestId && aiOriginalOutput && propertyId) {
+      try {
+        // Build user-confirmed data from the same fields sent to the RPC
+        const userConfirmed: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(body)) {
+          if (k !== "requestId" && k !== "aiOriginalOutput") {
+            userConfirmed[k] = v;
+          }
+        }
+
+        // Sanitize sensitive fields from both objects before storage
+        const EXCLUDED = new Set([
+          "owner_phone", "owner_wechat", "exact_address", "key_location",
+          "phone", "wechat", "internal_notes", "client_id_number",
+        ]);
+        function sanitize(obj: Record<string, unknown>): Record<string, unknown> {
+          const out: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(obj)) {
+            if (EXCLUDED.has(k)) continue;
+            out[k] = v;
+          }
+          return out;
+        }
+
+        const diffs = computeFieldDiff(aiOriginalOutput, userConfirmed);
+        if (diffs.length > 0) {
+          await client.rpc("record_ai_correction", {
+            p_user_id: user.id,
+            p_workspace_id: workspaceId,
+            p_feature: "ai_data_extraction",
+            p_request_id: requestId,
+            p_entity_type: "property",
+            p_entity_id: propertyId,
+            p_prompt_version: "1",
+            p_model_name: "deepseek-v4-flash",
+            p_original_output: sanitize(aiOriginalOutput),
+            p_corrected_output: sanitize(userConfirmed),
+            p_diff: diffs,
+          });
+        }
+      } catch {
+        // Correction recording is best-effort; property creation already succeeded
+      }
+    }
+
     return jsonResponse({ id: propertyId }, { status: 201, headers: h });
   } catch {
     return jsonResponse({ error: "服务器错误" }, { status: 500, headers: h });

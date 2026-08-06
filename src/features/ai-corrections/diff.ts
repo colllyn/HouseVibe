@@ -25,6 +25,7 @@ export interface FieldDiff {
 // ============================================================
 
 const SENSITIVE_FIELDS = new Set([
+  // camelCase (from AI extraction output)
   "ownerName",
   "ownerPhone",
   "ownerWechat",
@@ -37,12 +38,29 @@ const SENSITIVE_FIELDS = new Set([
   "clientWechat",
   "clientName",
   "clientIdNumber",
+  // snake_case (from HTTP POST body)
+  "owner_name",
+  "owner_phone",
+  "owner_wechat",
+  "exact_address",
+  "building_no",
+  "unit_no",
+  "room_no",
+  "key_location",
+  "client_phone",
+  "client_wechat",
+  "client_name",
+  "client_id_number",
+  "phone",
+  "wechat",
+  "internal_notes",
 ]);
 
 /**
  * Fields that must never appear in correction logs even in redacted form.
  */
 const FULLY_EXCLUDED_FIELDS = new Set([
+  // camelCase
   "ownerPhone",
   "ownerWechat",
   "clientPhone",
@@ -50,6 +68,16 @@ const FULLY_EXCLUDED_FIELDS = new Set([
   "clientIdNumber",
   "exactAddress",
   "keyLocation",
+  // snake_case
+  "owner_phone",
+  "owner_wechat",
+  "client_phone",
+  "client_wechat",
+  "client_id_number",
+  "exact_address",
+  "key_location",
+  "phone",
+  "wechat",
 ]);
 
 // ============================================================
@@ -94,6 +122,7 @@ export function computeFieldDiff(
       diffs.push({ field: key, changeType: "added", confirmedValue: confirmedVal });
     } else if (origDefined && !confDefined) {
       // User removed/deleted a field
+      if (SENSITIVE_FIELDS.has(key)) continue;
       diffs.push({ field: key, changeType: "removed", originalValue: originalVal });
     } else if (!isEqual(originalVal, confirmedVal)) {
       // Field was modified
