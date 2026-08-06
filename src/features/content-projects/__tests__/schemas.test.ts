@@ -639,4 +639,74 @@ describe("PublishingRecordsQuerySchema", () => {
   it("rejects limit > 100", () => {
     expect(PublishingRecordsQuerySchema.safeParse({ limit: "200" }).success).toBe(false);
   });
+
+  it("rejects limit < 1", () => {
+    expect(PublishingRecordsQuerySchema.safeParse({ limit: "0" }).success).toBe(false);
+  });
+
+  it("rejects offset < 0", () => {
+    expect(PublishingRecordsQuerySchema.safeParse({ offset: "-1" }).success).toBe(false);
+  });
+
+  it("rejects invalid platform", () => {
+    expect(PublishingRecordsQuerySchema.safeParse({ platform: "invalid" }).success).toBe(false);
+  });
+
+  it("rejects non-UUID content_project_id", () => {
+    expect(PublishingRecordsQuerySchema.safeParse({ content_project_id: "bad" }).success).toBe(false);
+  });
+});
+
+// ============================================================
+// CreatePublishingRecordSchema boundary tests
+// ============================================================
+
+describe("CreatePublishingRecordSchema boundaries", () => {
+  const validInput = {
+    content_version_id: "e0000000-0000-0000-0000-000000000001",
+    platform: "xiaohongshu",
+    published_at: "2026-08-06T10:00:00.000Z",
+  };
+
+  it("rejects empty published_at", () => {
+    expect(CreatePublishingRecordSchema.safeParse({ ...validInput, published_at: "" }).success).toBe(false);
+  });
+
+  it("rejects non-datetime published_at", () => {
+    expect(CreatePublishingRecordSchema.safeParse({ ...validInput, published_at: "garbage" }).success).toBe(false);
+  });
+
+  it("rejects non-UUID content_version_id", () => {
+    expect(CreatePublishingRecordSchema.safeParse({ ...validInput, content_version_id: "bad" }).success).toBe(false);
+  });
+
+  it("rejects invalid post_url", () => {
+    expect(CreatePublishingRecordSchema.safeParse({ ...validInput, post_url: "not-a-url" }).success).toBe(false);
+  });
+
+  it("rejects content_code > 200 chars", () => {
+    expect(CreatePublishingRecordSchema.safeParse({ ...validInput, content_code: "a".repeat(201) }).success).toBe(false);
+  });
+
+  it("rejects keyword > 200 chars", () => {
+    expect(CreatePublishingRecordSchema.safeParse({ ...validInput, private_message_keyword: "a".repeat(201) }).success).toBe(false);
+  });
+});
+
+// ============================================================
+// UpdatePublishingRecordSchema boundary tests
+// ============================================================
+
+describe("UpdatePublishingRecordSchema boundaries", () => {
+  it("rejects invalid post_url", () => {
+    expect(UpdatePublishingRecordSchema.safeParse({ post_url: "not-a-url" }).success).toBe(false);
+  });
+
+  it("rejects content_code > 200 chars", () => {
+    expect(UpdatePublishingRecordSchema.safeParse({ content_code: "a".repeat(201) }).success).toBe(false);
+  });
+
+  it("rejects keyword > 200 chars", () => {
+    expect(UpdatePublishingRecordSchema.safeParse({ private_message_keyword: "a".repeat(201) }).success).toBe(false);
+  });
 });

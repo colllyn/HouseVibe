@@ -164,9 +164,8 @@ test.describe("Publishing Records CRUD", () => {
       await page.waitForTimeout(1000);
 
       // Verify metrics are displayed
-      const hasViews = await page.getByText("1,500").isVisible().catch(() => false);
-      const hasLeads = await page.getByText("3").isVisible().catch(() => false);
-      expect(hasViews || hasLeads).toBe(true);
+      await expect(page.getByText("1,500")).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText("3")).toBeVisible({ timeout: 5000 });
 
     } finally {
       await supabase.auth.admin.deleteUser(userId);

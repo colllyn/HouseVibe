@@ -186,5 +186,77 @@ SELECT throws_ok(
   '13: user B cannot insert publishing_record'
 );
 
+-- 14: User A can SELECT publishing_records
+SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}';
+SELECT is(
+  (SELECT count(*)::integer FROM public.publishing_records
+   WHERE workspace_id = '8cae1001-0000-4000-8000-000000000001'),
+  1,
+  '14: user A can SELECT publishing_records'
+);
+
+-- 15: User B (no content_factory) cannot SELECT publishing_records
+SET LOCAL "request.jwt.claims" TO '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}';
+SELECT is(
+  (SELECT count(*)::integer FROM public.publishing_records),
+  0,
+  '15: user B sees 0 publishing_records (no content_factory)'
+);
+
+-- 16: User C (workspace B, content_factory) cannot see workspace A records
+SET LOCAL "request.jwt.claims" TO '{"sub":"cccccccc-cccc-cccc-cccc-cccccccccccc"}';
+SELECT is(
+  (SELECT count(*)::integer FROM public.publishing_records
+   WHERE workspace_id = '8cae1001-0000-4000-8000-000000000001'),
+  0,
+  '16: user C cannot SELECT workspace A publishing_records'
+);
+
+-- 17: Anon cannot SELECT publishing_records (no table privilege)
+SET LOCAL ROLE anon;
+SET LOCAL "request.jwt.claims" TO '';
+SELECT throws_ok(
+  $$SELECT count(*) FROM public.publishing_records$$,
+  '42501', NULL,
+  '17: anon denied SELECT on publishing_records'
+);
+SET LOCAL ROLE authenticated;
+
+-- 18: User A can UPDATE publishing_records
+SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}';
+SELECT lives_ok(
+  $$UPDATE public.publishing_records SET views = 100
+    WHERE workspace_id = '8cae1001-0000-4000-8000-000000000001'$$,
+  '18: user A can UPDATE publishing_records'
+);
+
+-- 19: User B (no content_factory) cannot UPDATE — RLS silently filters
+SET LOCAL "request.jwt.claims" TO '{"sub":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}';
+SELECT lives_ok(
+  $$UPDATE public.publishing_records SET views = 999
+    WHERE workspace_id = '8cae1001-0000-4000-8000-000000000001'$$,
+  '19: user B UPDATE does not throw (RLS silent filter)'
+);
+
+-- 19b: Verify User A still sees original views value (User B update had no effect)
+SET LOCAL "request.jwt.claims" TO '{"sub":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"}';
+SELECT is(
+  (SELECT views::integer FROM public.publishing_records
+   WHERE workspace_id = '8cae1001-0000-4000-8000-000000000001' LIMIT 1),
+  100,
+  '19b: views still 100 — user B update had no effect'
+);
+
+-- 20: User D (no workspace) cannot insert
+SET LOCAL "request.jwt.claims" TO '{"sub":"dddddddd-dddd-dddd-dddd-dddddddddddd"}';
+SELECT throws_ok(
+  $$INSERT INTO public.publishing_records (workspace_id, content_project_id, content_version_id, platform, published_at)
+    VALUES ('8cae1001-0000-4000-8000-000000000001', 'acae4001-0000-4000-8000-000000000001',
+            (SELECT id FROM public.content_versions WHERE content_project_id = 'acae4001-0000-4000-8000-000000000001' LIMIT 1),
+            'xiaohongshu', now())$$,
+  '42501', NULL,
+  '20: user D (no workspace) cannot insert publishing_record'
+);
+
 SELECT finish();
 ROLLBACK;
