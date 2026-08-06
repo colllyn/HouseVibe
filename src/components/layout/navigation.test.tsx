@@ -70,11 +70,12 @@ describe("MobileBottomNav", () => {
     it("disabled items are NOT links (no link role)", () => {
       render(<MobileBottomNav />);
       const links = screen.getAllByRole("link");
-      expect(links.length).toBe(4); // Phase 2: 首页, 房源, 客户, 我的
+      expect(links.length).toBe(5); // 首页, 房源, 客户, 内容, 我的
       const linkTexts = links.map((l) => l.textContent);
       expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("房源"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("客户"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("内容"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("我的"))).toBe(true);
     });
   });
@@ -125,7 +126,7 @@ describe("DesktopSidebar", () => {
   });
 
   describe("enabled items", () => {
-    it.each(["工作台", "首页", "房源", "设置"])("%s is a <Link> component (renders as <a>)", (label) => {
+    it.each(["工作台", "首页", "房源", "客户", "内容", "设置"])("%s is a <Link> component (renders as <a>)", (label) => {
       render(<DesktopSidebar />);
       const allMatching = screen.getAllByText(label);
       let found = false;
@@ -140,7 +141,7 @@ describe("DesktopSidebar", () => {
       expect(found).toBe(true);
     });
 
-    it.each(["工作台", "首页", "房源", "设置"])("%s does NOT have aria-disabled", (label) => {
+    it.each(["工作台", "首页", "房源", "客户", "内容", "设置"])("%s does NOT have aria-disabled", (label) => {
       render(<DesktopSidebar />);
       const allMatching = screen.getAllByText(label);
       let checked = false;
@@ -171,8 +172,9 @@ describe("DesktopSidebar", () => {
       expect(linkTexts.some((t) => t?.includes("工作台"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("房源"))).toBe(true); // Phase 2: enabled
-      expect(linkTexts.some((t) => t?.includes("设置"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("客户"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("内容"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("设置"))).toBe(true);
     });
   });
 });

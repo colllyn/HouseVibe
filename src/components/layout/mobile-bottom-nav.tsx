@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Building2, Users, User } from "lucide-react";
+import { LayoutDashboard, Building2, Users, FileText, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -17,6 +17,7 @@ const navItems: NavItem[] = [
   { label: "首页", href: "/", icon: LayoutDashboard },
   { label: "房源", href: "/properties", icon: Building2 },
   { label: "客户", href: "/clients", icon: Users },
+  { label: "内容", href: "/content", icon: FileText },
   { label: "我的", href: "/settings/profile", icon: User },
 ];
 

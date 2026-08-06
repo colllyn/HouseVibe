@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Building2,
   Users,
+  FileText,
   Settings,
   Home,
 } from "lucide-react";
@@ -24,6 +25,7 @@ const navItems: NavItem[] = [
   { label: "首页", href: "/", icon: Home },
   { label: "房源", href: "/properties", icon: Building2 },
   { label: "客户", href: "/clients", icon: Users },
+  { label: "内容", href: "/content", icon: FileText },
   { label: "设置", href: "/settings/profile", icon: Settings },
 ];
 
