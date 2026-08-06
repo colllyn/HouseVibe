@@ -87,6 +87,18 @@ export default function ContentDetailPage() {
   const [editStatus, setEditStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [feedbacking, setFeedbacking] = useState<string | null>(null); // version id being submitted
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [feedbackTypeSelector, setFeedbackTypeSelector] = useState<string | null>(null); // version id showing type picker
+
+  const FEEDBACK_REASONS = [
+    { value: "fact_error", label: "事实错误" },
+    { value: "wrong_tone", label: "语气不对" },
+    { value: "too_verbose", label: "太罗嗦" },
+    { value: "format_error", label: "格式错误" },
+    { value: "platform_mismatch", label: "平台感不强" },
+    { value: "other", label: "其他" },
+  ];
 
   // ============================================================
   // Fetch project + versions
@@ -261,6 +273,37 @@ export default function ContentDetailPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch { /* ignore */ }
+  };
+
+  // ============================================================
+  // Submit feedback (👍/👎)
+  // ============================================================
+
+  const handleFeedback = async (versionId: string, score: number, feedbackType?: string) => {
+    setFeedbacking(versionId);
+    setFeedbackError(null);
+    try {
+      const res = await fetch("/api/ai/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contentVersionId: versionId,
+          score,
+          feedbackType: feedbackType ?? undefined,
+        }),
+      });
+      if (res.ok) {
+        setFeedbackTypeSelector(null);
+        // Refresh versions to show updated feedback
+        await fetchProject();
+      } else {
+        const json = await res.json().catch(() => null);
+        setFeedbackError(json?.error?.message ?? "反馈提交失败");
+      }
+    } catch {
+      setFeedbackError("网络错误");
+    }
+    setFeedbacking(null);
   };
 
   // ============================================================
@@ -571,6 +614,10 @@ export default function ContentDetailPage() {
           )}
         </h2>
 
+        {feedbackError && (
+          <p className="mt-2 text-xs text-destructive">{feedbackError}</p>
+        )}
+
         {projectState.versions.length === 0 ? (
           <p className="mt-3 text-xs text-muted-foreground">
             暂无保存的版本。生成内容后点击“保存为版本”即可在此查看。
@@ -596,10 +643,26 @@ export default function ContentDetailPage() {
                         {complianceLabel(v.compliance_status)}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {/* Feedback */}
-                      {v.feedback_score === 1 && <ThumbsUp className="h-3.5 w-3.5 text-green-600" />}
-                      {v.feedback_score === -1 && <ThumbsDown className="h-3.5 w-3.5 text-destructive" />}
+                    <div className="flex items-center gap-1">
+                      {/* Feedback buttons */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleFeedback(v.id, 1); }}
+                        disabled={feedbacking === v.id}
+                        className={`rounded p-0.5 hover:bg-muted ${v.feedback_score === 1 ? "text-green-600" : "text-muted-foreground"}`}
+                        title="有帮助"
+                        aria-label="点赞"
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" fill={v.feedback_score === 1 ? "currentColor" : "none"} />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setFeedbackTypeSelector(feedbackTypeSelector === v.id ? null : v.id); }}
+                        disabled={feedbacking === v.id}
+                        className={`rounded p-0.5 hover:bg-muted ${v.feedback_score === -1 ? "text-destructive" : "text-muted-foreground"}`}
+                        title="有问题"
+                        aria-label="点踩"
+                      >
+                        <ThumbsDown className="h-3.5 w-3.5" fill={v.feedback_score === -1 ? "currentColor" : "none"} />
+                      </button>
                       {isExpanded ? (
                         <ChevronUp className="h-4 w-4 text-muted-foreground" />
                       ) : (
@@ -607,6 +670,38 @@ export default function ContentDetailPage() {
                       )}
                     </div>
                   </button>
+
+                  {/* Feedback type selector for 👎 */}
+                  {feedbackTypeSelector === v.id && (
+                    <div className="border-t px-3 py-2">
+                      <p className="text-xs text-muted-foreground mb-1.5">请选择问题类型：</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {FEEDBACK_REASONS.map((reason) => (
+                          <button
+                            key={reason.value}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleFeedback(v.id, -1, reason.value);
+                            }}
+                            disabled={feedbacking === v.id}
+                            className="rounded-full border px-2.5 py-1 text-xs hover:bg-muted disabled:opacity-50"
+                          >
+                            {reason.label}
+                          </button>
+                        ))}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFeedbackTypeSelector(null);
+                          }}
+                          disabled={feedbacking === v.id}
+                          className="rounded-full border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted disabled:opacity-50"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {isExpanded && (
                     <div className="border-t p-3">

@@ -3,14 +3,9 @@
  *
  * POST /api/ai/feedback
  * Records 👍/👎 feedback on AI-generated content.
- * Writes to ai_correction_logs with feedback_score/type/comment.
+ * Writes to ai_correction_logs AND updates content_versions.feedback_score.
  *
  * Contract: implementation-plan.md §P3-AI-011, ai-contract.md §9
- *
- * NOTE: content_versions / content_projects tables are deferred (not yet implemented).
- * This endpoint records feedback directly to ai_correction_logs without cross-table
- * content version verification. When those tables are added, a content_version lookup
- * should be inserted before the RPC call.
  */
 
 import { type NextRequest } from "next/server";
@@ -33,7 +28,7 @@ const VALID_FEEDBACK_TYPES = [
 
 const FeedbackRequestSchema = z.object({
   contentVersionId: z.string().uuid(),
-  score: z.number().int().min(1).max(5),
+  score: z.number().int().min(-1).max(1),
   feedbackType: z.enum(VALID_FEEDBACK_TYPES).optional(),
   comment: z.string().max(500).optional(),
   promptVersion: z.string().optional(),
@@ -115,13 +110,24 @@ export async function POST(request: NextRequest) {
 
     const { contentVersionId, score, feedbackType, comment, promptVersion, modelName } = parsed.data;
 
-    // 5. Record feedback into ai_correction_logs via RPC
-    //    NOTE: content_versions / content_projects tables do not exist yet (deferred).
-    //    contentVersionId is accepted as a client-provided opaque entity ID.
-    //    The RPC verifies workspace membership and handles idempotency.
+    // 5. Verify content_version exists and belongs to workspace
+    const { data: version } = await client.from("content_versions")
+      .select("id, content_project_id")
+      .eq("id", contentVersionId)
+      .eq("workspace_id", workspaceId)
+      .single();
+
+    if (!version) {
+      return jsonResponse(
+        { data: null, error: { code: "NOT_FOUND", message: "内容版本不存在或无权访问" } },
+        { status: 404, headers: h },
+      );
+    }
+
+    // 6. Record feedback into ai_correction_logs via RPC
     const requestId = crypto.randomUUID();
 
-    const { data: feedbackResult, error: insertErr } = await client.rpc("record_ai_correction", {
+    const { error: insertErr } = await client.rpc("record_ai_correction", {
       p_user_id: user.id,
       p_workspace_id: workspaceId,
       p_feature: "content_factory",
@@ -147,9 +153,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Success
+    // 7. Update content_versions with feedback (upsert — overwrites previous)
+    const { error: updateErr } = await client.from("content_versions")
+      .update({
+        feedback_score: score,
+        feedback_type: feedbackType ?? null,
+        feedback_comment: comment ?? null,
+      })
+      .eq("id", contentVersionId)
+      .eq("workspace_id", workspaceId);
+
+    if (updateErr) {
+      // Non-fatal — correction log was written, version update is best-effort
+      console.warn("Failed to update content_versions feedback:", updateErr.message);
+    }
+
+    // 8. Success
     return jsonResponse(
-      { data: { id: (feedbackResult as Record<string, unknown>)?.id, recorded: true }, error: null },
+      { data: { recorded: true, versionId: contentVersionId, score }, error: null },
       { status: 200, headers: h },
     );
   } catch {
