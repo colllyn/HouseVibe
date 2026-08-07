@@ -1,0 +1,82 @@
+name: CI
+
+# =============================================================================
+# P1-INT-004: Continuous Integration Pipeline
+#
+# Ensures every push and pull request passes:
+#   - TypeScript strict mode typecheck
+#   - ESLint (zero new warnings)
+#   - Vitest unit + integration tests
+#   - Next.js production build
+#   - Supabase database lint
+#   - Supabase pgTAP tests
+# =============================================================================
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===========================================================================
+  # Fast checks: typecheck, lint, test, build
+  # No Supabase needed — runs on every PR push.
+  # ===========================================================================
+
+  check:
+    name: Typecheck / Lint / Test / Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+  # ===========================================================================
+  # Database checks: supabase db lint + test db
+  # Requires Supabase CLI and Docker (for local Supabase).
+  # ===========================================================================
+
+  supabase:
+    name: Supabase DB Lint / Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start Supabase
+        run: supabase db start
+
+      - name: DB Lint
+        run: supabase db lint
+
+      - name: DB Test
+        run: supabase test db
