@@ -51,7 +51,7 @@ function buildSupabaseClient() {
     client: {
       auth: { getUser: mockGetUser },
       from: () => buildQueryBuilder(),
-      rpc: () => Promise.resolve({ error: null }),
+      rpc: () => Promise.resolve({ data: { success: true, reservation_id: "res-test-1" }, error: null }),
     },
     jsonResponse: (
       body: unknown,
@@ -70,6 +70,26 @@ vi.mock("@/lib/supabase/route-handler", () => ({
 
 vi.mock("@/features/access-control/guards", () => ({
   hasFeature: mockHasFeature,
+}));
+
+vi.mock("@/config/env", () => ({
+  getServerEnv: () => ({
+    DEEPSEEK_API_KEY: undefined,
+    DEEPSEEK_BASE_URL: undefined,
+    DEEPSEEK_MODEL: "deepseek-v4-flash",
+    DEEPSEEK_FALLBACK_MODEL: "deepseek-v4-pro",
+    DEEPSEEK_REQUEST_TIMEOUT_MS: 45000,
+    DEEPSEEK_VISION_BASE_URL_PRIMARY: undefined,
+    DEEPSEEK_VISION_BASE_URL_FALLBACK: undefined,
+    DEEPSEEK_VISION_API_KEY: undefined,
+    AI_DAILY_CONTENT_LIMIT: 10,
+    AI_DAILY_EXTRACTION_LIMIT: 50,
+    AI_DAILY_SEARCH_LIMIT: 50,
+    AI_DAILY_COST_LIMIT_USD: 10.0,
+    AI_QUOTA_TIMEZONE: "Asia/Shanghai",
+    SUPABASE_URL: "http://localhost:54321",
+    SUPABASE_ANON_KEY: "mock-anon-key",
+  }),
 }));
 
 // ============================================================

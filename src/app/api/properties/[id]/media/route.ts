@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { createClient } from "@/lib/supabase/server";
+import { stripExif } from "@/lib/media/strip-exif";
 import {
   ALLOWED_MEDIA_MIME_TYPES,
   MAX_MEDIA_FILE_SIZE,
@@ -338,10 +339,20 @@ export async function POST(
       const fileUuid = crypto.randomUUID();
       const storagePath = `${workspaceId}/${user.id}/${fileUuid}.${ext}`;
 
-      // d. Upload to Supabase Storage
+      // d. Strip EXIF metadata (P1-001: GPS, camera info, etc.) before storage
+      let uploadBody: Buffer | File = file;
+      try {
+        const originalBuffer = Buffer.from(await file.arrayBuffer());
+        uploadBody = await stripExif(originalBuffer, file.type);
+      } catch (stripErr) {
+        // Fallback: upload original file if EXIF stripping fails
+        console.error("[media-upload] EXIF strip failed, using original:", stripErr);
+      }
+
+      // e. Upload to Supabase Storage
       const { error: uploadErr } = await serverClient.storage
         .from("property-private")
-        .upload(storagePath, file, { contentType: file.type, upsert: false });
+        .upload(storagePath, uploadBody, { contentType: file.type, upsert: false });
 
       if (uploadErr) {
         rejections.push({
@@ -352,7 +363,7 @@ export async function POST(
         continue;
       }
 
-      // e. Insert property_media row
+      // f. Insert property_media row
       const { data: inserted, error: insertErr } = await client
         .from("property_media")
         .insert({
@@ -367,7 +378,7 @@ export async function POST(
         .single();
 
       if (insertErr || !inserted) {
-        // f. Compensation: delete storage object on DB failure
+        // g. Compensation: delete storage object on DB failure
         const { error: removeErr } = await serverClient.storage.from("property-private").remove([storagePath]);
         if (removeErr) {
           console.error("Media upload compensation failed for", storagePath, removeErr);

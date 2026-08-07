@@ -80,6 +80,8 @@ const serverEnvSchema = z.object({
   MAX_AUDIO_DURATION_SECONDS: z.coerce.number().int().default(60),
   MAX_AUDIO_UPLOAD_BYTES: z.coerce.number().int().default(10485760),
   AI_DAILY_CONTENT_LIMIT: z.coerce.number().int().default(10),
+  AI_DAILY_EXTRACTION_LIMIT: z.coerce.number().int().default(50),
+  AI_DAILY_SEARCH_LIMIT: z.coerce.number().int().default(50),
   AI_DAILY_COST_LIMIT_USD: z.coerce.number().default(10.0),
   AI_PREFERENCE_MIN_EVIDENCE: z.coerce.number().int().default(3),
   AI_FAILURE_THRESHOLD: z.coerce.number().int().default(3),

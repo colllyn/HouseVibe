@@ -14,6 +14,12 @@ import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
 import { hasFeature } from "@/features/access-control/guards";
 import { createDeepSeekTextProvider } from "@/lib/ai/providers/deepseek-text-provider";
 import { DeepSeekProviderError } from "@/lib/ai/types";
+import {
+  reserveQuota,
+  settleQuota,
+  releaseQuota,
+  type RpcClient,
+} from "@/lib/ai/routes/quota-helpers";
 import type { DeepSeekTextProvider, SearchParseInput } from "@/lib/ai/types";
 
 // ============================================================
@@ -28,6 +34,7 @@ const ParseSearchRequestSchema = z
       .max(500, "搜索内容不能超过500个字符")
       .transform((v) => v.trim())
       .pipe(z.string().min(1, "搜索内容不能为空")),
+    idempotencyKey: z.string().min(1).max(100).optional(),
   })
   .strict();
 
@@ -114,20 +121,28 @@ export function createParsePropertySearchHandler(
 
     const { client, jsonResponse } = await createRouteHandlerClient(request);
 
+    function errorResponse(code: string, message: string, status: number, details?: Record<string, unknown>) {
+      return jsonResponse(
+        { data: null, error: { code, message, ...(details ? { details } : {}) } },
+        { status, headers: h }
+      );
+    }
+
+    let reservationId: string | null = null;
+    let idempotencyKey: string | null = null;
+    let workspaceId: string | null = null;
+    let userId: string | null = null;
+
     try {
       // 1. Authentication
       const {
         data: { user },
       } = await client.auth.getUser();
       if (!user) {
-        return jsonResponse(
-          {
-            data: null,
-            error: { code: "UNAUTHENTICATED", message: "未登录" },
-          },
-          { status: 401, headers: h }
-        );
+        return errorResponse("UNAUTHENTICATED", "未登录", 401);
       }
+
+      userId = user.id;
 
       // 2. Workspace membership
       const { data: member } = await client
@@ -139,46 +154,22 @@ export function createParsePropertySearchHandler(
         .single();
 
       if (!member) {
-        return jsonResponse(
-          {
-            data: null,
-            error: {
-              code: "WORKSPACE_ACCESS_DENIED",
-              message: "无工作区权限",
-            },
-          },
-          { status: 403, headers: h }
-        );
+        return errorResponse("WORKSPACE_ACCESS_DENIED", "无工作区权限", 403);
       }
 
-      // 3. Entitlement check — must be semantic_search, NOT property_matching
+      const wsId = member.workspace_id;
+      workspaceId = wsId;
+
+      // 3. Entitlement check — must be semantic_search
       const entitled = await hasFeature("semantic_search");
       if (!entitled) {
-        return jsonResponse(
-          {
-            data: null,
-            error: {
-              code: "FEATURE_NOT_ALLOWED",
-              message: "需要 semantic_search 功能授权",
-            },
-          },
-          { status: 403, headers: h }
-        );
+        return errorResponse("FEATURE_NOT_ALLOWED", "需要 semantic_search 功能授权", 403);
       }
 
       // 4. Content-Type validation
       const contentType = request.headers.get("content-type") ?? "";
       if (!contentType.includes("application/json")) {
-        return jsonResponse(
-          {
-            data: null,
-            error: {
-              code: "VALIDATION_FAILED",
-              message: "请求格式必须为 JSON",
-            },
-          },
-          { status: 422, headers: h }
-        );
+        return errorResponse("VALIDATION_FAILED", "请求格式必须为 JSON", 422);
       }
 
       // 5. Body parsing and validation
@@ -186,16 +177,7 @@ export function createParsePropertySearchHandler(
       try {
         body = await request.json();
       } catch {
-        return jsonResponse(
-          {
-            data: null,
-            error: {
-              code: "VALIDATION_FAILED",
-              message: "请求体不是有效的 JSON",
-            },
-          },
-          { status: 422, headers: h }
-        );
+        return errorResponse("VALIDATION_FAILED", "请求体不是有效的 JSON", 422);
       }
 
       const parsed = ParseSearchRequestSchema.safeParse(body);
@@ -204,15 +186,36 @@ export function createParsePropertySearchHandler(
         const msg = first
           ? `${first.path.join(".")}: ${first.message}`
           : "请求参数无效";
-        return jsonResponse(
-          { data: null, error: { code: "VALIDATION_FAILED", message: msg } },
-          { status: 422, headers: h }
-        );
+        return errorResponse("VALIDATION_FAILED", msg, 422);
       }
 
       const { query } = parsed.data;
 
-      // 6. Call Provider — only pass trimmed query, never workspaceId/userId/PII
+      // 6. Generate idempotency key (client-supplied or auto-generated)
+      const idemKey = parsed.data.idempotencyKey ?? crypto.randomUUID();
+      idempotencyKey = idemKey;
+
+      // 7. Atomic quota reservation (P3-AI-014 lifecycle)
+      const reserveResult = await reserveQuota({
+        client: client as unknown as RpcClient,
+        userId: user.id,
+        workspaceId: wsId,
+        feature: "semantic_search",
+        idempotencyKey: idemKey,
+      });
+
+      if (reserveResult.errorResponse) {
+        return errorResponse(
+          reserveResult.errorResponse.code,
+          reserveResult.errorResponse.message,
+          reserveResult.errorResponse.status,
+          reserveResult.errorResponse.details,
+        );
+      }
+
+      reservationId = reserveResult.reservationId;
+
+      // 8. Call Provider — only pass trimmed query, never workspaceId/userId/PII
       const provider = getProvider();
       const providerInput: SearchParseInput = {
         query,
@@ -221,18 +224,61 @@ export function createParsePropertySearchHandler(
         modelName: "deepseek-v4-flash",
       };
 
-      const filters = await provider.parsePropertySearch(providerInput);
+      let filters;
+      try {
+        filters = await provider.parsePropertySearch(providerInput);
+      } catch (providerErr) {
+        // Provider failed — release reserved quota
+        if (reservationId && idemKey) {
+          await releaseQuota({
+            client: client as unknown as RpcClient,
+            userId: user.id,
+            workspaceId: wsId,
+            idempotencyKey: idemKey,
+            reason: "provider_error",
+          });
+          reservationId = null;
+        }
+        throw providerErr;
+      }
 
-      // 7. Success — return only filters (not raw provider response)
+      // 9. Settle quota — search parse doesn't expose actual token usage,
+      //    so settle with estimated cost
+      if (reservationId && idemKey) {
+        const estCostUsd = (2048 * 0.00219) / 1000; // conservative estimate
+        await settleQuota({
+          client: client as unknown as RpcClient,
+          userId: user.id,
+          workspaceId: wsId,
+          idempotencyKey: idemKey,
+          inputTokens: 512,
+          outputTokens: 256,
+          costUsd: estCostUsd,
+          model: providerInput.modelName,
+        });
+        reservationId = null;
+      }
+
+      // 10. Success — return only filters (not raw provider response)
       return jsonResponse(
         { data: { filters }, error: null },
         { status: 200, headers: h }
       );
     } catch (err) {
+      // Best-effort: release quota on unhandled errors
+      if (reservationId && idempotencyKey && workspaceId && userId) {
+        try {
+          await releaseQuota({
+            client: client as unknown as RpcClient,
+            userId,
+            workspaceId,
+            idempotencyKey,
+            reason: "unhandled_error",
+          });
+        } catch { /* best-effort */ }
+      }
+
       if (err instanceof DeepSeekProviderError) {
-        // AI_REQUEST_ABORTED: connection already closed by client.
-        // Rethrow so Next.js / the runtime can abort response streaming.
-        // Do NOT return a Response, do NOT log query/prompt/raw response.
         if (err.code === "AI_REQUEST_ABORTED") {
           throw err;
         }
@@ -245,10 +291,7 @@ export function createParsePropertySearchHandler(
       }
 
       return jsonResponse(
-        {
-          data: null,
-          error: { code: "INTERNAL_ERROR", message: "服务器错误" },
-        },
+        { data: null, error: { code: "INTERNAL_ERROR", message: "服务器错误" } },
         { status: 500, headers: h }
       );
     }

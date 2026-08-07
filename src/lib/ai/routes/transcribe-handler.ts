@@ -11,13 +11,14 @@
 import { type NextRequest } from "next/server";
 import { z } from "zod";
 import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
+import { getServerEnv } from "@/config/env";
 import {
   createTranscriptionProvider,
   type TranscriptionProvider,
 } from "@/lib/ai/providers/transcription-provider";
 
 // ============================================================
-// Constants
+// Constants — derived from env at module load (runtime-adjustable via restart)
 // ============================================================
 
 const ALLOWED_MIME_TYPES = [
@@ -28,8 +29,9 @@ const ALLOWED_MIME_TYPES = [
   "audio/x-m4a",
 ] as const;
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
-const MAX_AUDIO_DURATION_SECONDS = 60;
+const _env = getServerEnv();
+const MAX_FILE_BYTES = _env.MAX_AUDIO_UPLOAD_BYTES;
+const MAX_AUDIO_DURATION_SECONDS = _env.MAX_AUDIO_DURATION_SECONDS;
 
 // ============================================================
 // Helpers

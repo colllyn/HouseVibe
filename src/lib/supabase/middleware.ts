@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getPublicEnv } from "@/config/env";
 
 /**
- * Refreshes the Supabase session and returns a response with updated cookies.
+ * Refreshes the Supabase session and returns a response with updated cookies
+ * and the authenticated user (null if no valid session).
  * Used by src/middleware.ts for session refresh on every request.
  *
  * - Creates a request-scoped Supabase client
@@ -40,7 +41,7 @@ export async function updateSession(request: NextRequest) {
   // Refresh the session by validating the user — this also refreshes the token if needed.
   // We use getUser() which makes a call to the Supabase Auth server to validate.
   // This is the recommended approach; getSession() only reads the local JWT.
-  await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
 
-  return response;
+  return { response, user };
 }

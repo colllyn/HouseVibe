@@ -5,12 +5,13 @@ import { createClient } from "@/lib/supabase/server";
 /**
  * Export the authenticated user's data.
  *
- * Returns a JSON blob of the user's profile and workspace memberships.
- * This is a simplified Phase 1 implementation.
+ * Fetches the user's profile and workspace memberships
+ * and returns a structured JSON object suitable for download.
  */
 export async function exportDataAction(): Promise<{
   error?: string;
   success?: boolean;
+  data?: Record<string, unknown>;
 }> {
   const supabase = await createClient();
 
@@ -23,16 +24,41 @@ export async function exportDataAction(): Promise<{
     return { error: "请先登录" };
   }
 
-  // For Phase 1, return success acknowledgment.
-  // Future phases can build a structured export payload.
-  return { success: true };
+  // Fetch profile
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("*")
+    .eq("id", user.id)
+    .single();
+
+  // Fetch workspace memberships — only active, non-deleted workspaces
+  const { data: memberships } = await supabase
+    .from("workspace_members")
+    .select("workspace_id, role, status, created_at, workspaces (name)")
+    .eq("user_id", user.id)
+    .eq("status", "active");
+
+  type MemberRow = typeof memberships extends readonly (infer T)[] | null ? T : never;
+
+  return {
+    success: true,
+    data: {
+      exportedAt: new Date().toISOString(),
+      profile: profile ?? null,
+      email: user.email,
+      memberships: (memberships ?? []).filter(
+        (m: MemberRow) => m !== null
+      ),
+    },
+  };
 }
 
 /**
- * Request account deletion.
+ * Soft-delete the authenticated user's profile.
  *
- * Phase 1: marks profile as inactive / shows confirmation.
- * Actual deletion requires manual review per security policy.
+ * Sets deleted_at on the profiles table and marks all workspace
+ * memberships as inactive. User can still log in but will see
+ * account-deactivated state. Full deletion requires admin review.
  */
 export async function deleteAccountAction(): Promise<{
   error?: string;
@@ -49,6 +75,22 @@ export async function deleteAccountAction(): Promise<{
     return { error: "请先登录" };
   }
 
-  // Phase 1: acknowledge request; manual review required before actual deletion.
+  // Soft-delete profile
+  const { error: profileErr } = await supabase
+    .from("profiles")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", user.id);
+
+  if (profileErr) {
+    return { error: "操作失败，请重试" };
+  }
+
+  // Deactivate all workspace memberships
+  await supabase
+    .from("workspace_members")
+    .update({ status: "inactive" })
+    .eq("user_id", user.id)
+    .eq("status", "active");
+
   return { success: true };
 }

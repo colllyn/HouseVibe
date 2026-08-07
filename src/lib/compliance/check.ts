@@ -416,17 +416,3 @@ export function toResponseStatus(status: ComplianceStatus): string {
   }
 }
 
-/**
- * Convert internal ComplianceFlags to the contract ComplianceFlag shape
- * (without exposing internal detail fields).
- */
-export function toPublicFlags(
-  flags: readonly ComplianceFlag[]
-): Array<{ term: string; category: string; severity: "blocked" | "review" | "highlight"; suggestion: string }> {
-  return flags.map((f) => ({
-    term: f.term,
-    category: f.category,
-    severity: f.severity === "highlight" ? ("review" as const) : f.severity,
-    suggestion: f.suggestion,
-  }));
-}
