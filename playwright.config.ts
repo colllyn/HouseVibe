@@ -140,10 +140,21 @@ export default defineConfig({
       },
       dependencies: ["setup"],
     },
+    // Dashboard E2E — PRD §7.2
+    {
+      name: "dashboard",
+      testMatch: /dashboard-flows\.spec\.ts/,
+      fullyParallel: false,
+      use: {
+        browserName: "chromium",
+        storageState: "e2e/.auth/owner.json",
+      },
+      dependencies: ["setup"],
+    },
     // Default chromium (auth, admin, settings E2E — no storageState needed)
     {
       name: "chromium",
-      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows|semantic-search-ui|semantic-search-real)).*\.spec\.ts$/,
+      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows|semantic-search-ui|semantic-search-real|dashboard-flows)).*\.spec\.ts$/,
       use: { browserName: "chromium" },
     },
   ],
