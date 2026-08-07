@@ -25,7 +25,7 @@ select ok(not exists(select 1 from pg_policies where tablename='workspace_member
 select ok(exists(select 1 from pg_policies where tablename='workspace_members' and policyname='Members can see own memberships'), '6. SELECT policy retained');
 
 -- 7. Exactly 1 policy
-select is((select count(*)::int from pg_policies where tablename='workspace_members'), 1, '7. 1 RLS policy total');
+select is((select count(*)::int from pg_policies where tablename='workspace_members'), 2, '7. 2 RLS policies total (SELECT + self-deactivation UPDATE per 20260807000002)');
 
 -- 8. RPC in public schema
 select is((select nspname from pg_namespace n join pg_proc p on p.pronamespace=n.oid where p.proname='remove_workspace_member'), 'public', '8. In public schema');

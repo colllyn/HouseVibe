@@ -11,18 +11,6 @@
 begin;
 
 -- =============================================================================
--- 0. Fix entity_id type — existing RPCs (force_model_mode, update_circuit_state,
---    admin_restore_user_access) pass text values (e.g. 'text', 'vision') to
---    audit_logs.entity_id, but the column was typed uuid. Change to text so
---    all entity IDs (UUIDs and capability strings) coexist.
--- =============================================================================
-
-alter table public.audit_logs
-  alter column entity_id type text using entity_id::text;
-
-comment on column public.audit_logs.entity_id is 'Entity identifier — may be a UUID (properties, clients) or a text key (capabilities, features).';
-
--- =============================================================================
 -- 1. Replace admin_upsert_user_limits — add audit_log INSERT
 -- =============================================================================
 
@@ -206,7 +194,7 @@ begin
     null,
     v_auth_uid,
     'ai_runtime_config',
-    p_capability,
+    '00000000-0000-0000-0000-000000000000',
     'ai_circuit_manually_reset',
     jsonb_build_object(
       'circuit_open', v_previous_state.circuit_open,

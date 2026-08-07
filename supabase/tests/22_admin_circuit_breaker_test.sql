@@ -150,7 +150,7 @@ SELECT is(
   (SELECT count(*)::integer FROM public.audit_logs
    WHERE entity_type = 'ai_runtime_config'
      AND action = 'ai_circuit_manually_reset'
-     AND entity_id = 'text'),
+     AND after_data->>'capability' = 'text'),
   2,
   '9: two audit_log entries for text circuit reset (one idempotent, one open→closed)'
 );
@@ -158,7 +158,7 @@ SELECT is(
 -- 10: the open→closed reset entry has before_data.circuit_open = true
 SELECT is(
   (SELECT (before_data->>'circuit_open')::boolean FROM public.audit_logs
-   WHERE action = 'ai_circuit_manually_reset' AND entity_id = 'text'
+   WHERE action = 'ai_circuit_manually_reset' AND after_data->>'capability' = 'text'
      AND (before_data->>'circuit_open')::boolean = true
    ORDER BY created_at DESC LIMIT 1),
   true,
@@ -168,7 +168,7 @@ SELECT is(
 -- 11: audit_log entry has after_data with reset info
 SELECT is(
   (SELECT (after_data->>'circuit_open')::boolean FROM public.audit_logs
-   WHERE action = 'ai_circuit_manually_reset' AND entity_id = 'text'
+   WHERE action = 'ai_circuit_manually_reset' AND after_data->>'capability' = 'text'
    ORDER BY created_at DESC LIMIT 1),
   false,
   '11: audit_log after_data.circuit_open = false (reset confirmed)'

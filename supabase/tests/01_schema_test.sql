@@ -259,7 +259,7 @@ SELECT is(
 );
 SELECT is(
   (SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'workspace_members'),
-  1, 'workspace_members: 1 RLS policy (SELECT only; UPDATE revoked per 20260801000004)'
+  2, 'workspace_members: 2 RLS policies (SELECT + self-deactivation UPDATE per 20260807000002)'
 );
 SELECT is(
   (SELECT count(*)::int FROM pg_policies WHERE schemaname = 'public' AND tablename = 'audit_logs'),
