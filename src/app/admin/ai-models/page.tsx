@@ -58,6 +58,19 @@ export default function AdminAiModelsPage() {
     }
   };
 
+  const handleResetCircuit = async (capability: string) => {
+    try {
+      const res = await fetch("/api/admin/ai-models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ capability }),
+      });
+      if (res.ok) fetchConfig();
+    } catch {
+      // error state handled by page
+    }
+  };
+
   if (state.status === "loading") {
     return (
       <div className="p-6">
@@ -157,6 +170,22 @@ export default function AdminAiModelsPage() {
                   </button>
                 ))}
               </div>
+
+              {/* Circuit breaker reset — P3-AI-015 */}
+              {isCircuitOpen && (
+                <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3">
+                  <p className="text-xs text-red-700 mb-2">
+                    熔断器已断开。如确认主模型已恢复，可手动重置。
+                  </p>
+                  <button
+                    onClick={() => handleResetCircuit(cap)}
+                    data-testid={`reset-circuit-${cap}`}
+                    className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 transition-colors"
+                  >
+                    重置熔断器
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

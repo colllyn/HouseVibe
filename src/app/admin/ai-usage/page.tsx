@@ -245,7 +245,7 @@ export default function AdminAiUsagePage() {
         </div>
 
         <div className="flex rounded-md border">
-          {(["feature", "user", "model", "status"] as GroupBy[]).map((g) => (
+          {(["feature", "user", "workspace", "model", "status"] as GroupBy[]).map((g) => (
             <button
               key={g}
               onClick={() => handleGroupByChange(g)}

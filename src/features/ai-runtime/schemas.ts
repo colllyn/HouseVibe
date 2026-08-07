@@ -46,6 +46,16 @@ export const ForceModelModeRequestSchema = z.object({
 
 export type ForceModelModeRequest = z.infer<typeof ForceModelModeRequestSchema>;
 
+// ============================================================
+// Circuit reset schema — P3-AI-015
+// ============================================================
+
+export const ResetCircuitRequestSchema = z.object({
+  capability: CapabilityEnum,
+}).strict();
+
+export type ResetCircuitRequest = z.infer<typeof ResetCircuitRequestSchema>;
+
 export const CircuitStateSchema = z.object({
   success: z.boolean(),
   circuitOpen: z.boolean().optional(),
