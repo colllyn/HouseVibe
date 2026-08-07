@@ -8,6 +8,7 @@ import { test, expect } from "@playwright/test";
 import * as path from "path";
 
 const OTHER_STATE = path.resolve(__dirname, ".auth/other.json");
+const CONTENT_FACTORY_STATE = path.resolve(__dirname, ".auth/content-factory.json");
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -40,13 +41,12 @@ test.describe("Dashboard E2E", () => {
     await page.goto("/dashboard");
     await page.waitForLoadState("networkidle");
 
-    // Click tasks stat card
+    // Click tasks stat card — assert visibility, not conditional
     const tasksLink = page.locator('a[href="/tasks"]').first();
-    if (await tasksLink.isVisible()) {
-      await tasksLink.click();
-      await page.waitForURL(/\/tasks/, { timeout: 10000 });
-      await expect(page).toHaveURL(/\/tasks/);
-    }
+    await expect(tasksLink).toBeVisible({ timeout: 5000 });
+    await tasksLink.click();
+    await page.waitForURL(/\/tasks/, { timeout: 10000 });
+    await expect(page).toHaveURL(/\/tasks/);
   });
 
   test("4. quick actions are visible", async ({ page }) => {
@@ -62,13 +62,12 @@ test.describe("Dashboard E2E", () => {
     await page.goto("/dashboard");
     await page.waitForLoadState("networkidle");
 
-    // Click "快速录房源" — should navigate to /properties/new
+    // Click "快速录房源" — assert visibility, not conditional
     const newPropertyLink = page.locator('a[href="/properties/new"]');
-    if (await newPropertyLink.isVisible()) {
-      await newPropertyLink.click();
-      await page.waitForURL(/\/properties\/new/, { timeout: 10000 });
-      await expect(page).toHaveURL(/\/properties\/new/);
-    }
+    await expect(newPropertyLink).toBeVisible({ timeout: 5000 });
+    await newPropertyLink.click();
+    await page.waitForURL(/\/properties\/new/, { timeout: 10000 });
+    await expect(page).toHaveURL(/\/properties\/new/);
   });
 
   test("6. empty state shows zero values, not errors", async ({ page }) => {
@@ -120,7 +119,7 @@ test.describe("Dashboard E2E", () => {
     await expect(page.getByText("快捷操作")).toBeVisible({ timeout: 10000 });
   });
 
-  test("9. cross-workspace isolation — other workspace user can access dashboard", async ({ browser }) => {
+  test("9. cross-workspace isolation — separate workspace user sees own data", async ({ browser }) => {
     const context = await browser.newContext({ storageState: OTHER_STATE });
     const page = await context.newPage();
 
@@ -132,6 +131,17 @@ test.describe("Dashboard E2E", () => {
 
     // Should not show error
     await expect(page.getByText("数据加载失败")).not.toBeVisible({ timeout: 5000 });
+
+    // Verify stat values are present and non-negative (data is isolated per workspace)
+    const statValues = page.locator(".text-2xl");
+    const count = await statValues.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      const text = await statValues.nth(i).textContent();
+      const num = parseInt(text?.trim() ?? "", 10);
+      expect(num).toBeGreaterThanOrEqual(0);
+      expect(Number.isNaN(num)).toBe(false);
+    }
 
     await context.close();
   });
@@ -181,5 +191,27 @@ test.describe("Dashboard E2E", () => {
     // Sidebar should have navigation links
     // Dashboard should have active state
     await expect(page.locator("h1")).toContainText("工作台");
+  });
+});
+
+test.describe("Dashboard E2E — Content Factory User", () => {
+  test("14. content factory user sees content stats and quick action", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: CONTENT_FACTORY_STATE });
+    const page = await context.newPage();
+
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
+
+    // Dashboard loads
+    await expect(page.locator("h1")).toContainText("工作台", { timeout: 10000 });
+
+    // Content factory user should see content stats
+    await expect(page.getByText("近期内容")).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText("未发布内容")).toBeVisible({ timeout: 5000 });
+
+    // Content factory user should see "生成内容" quick action
+    await expect(page.getByText("生成内容")).toBeVisible({ timeout: 5000 });
+
+    await context.close();
   });
 });

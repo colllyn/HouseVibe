@@ -14,6 +14,7 @@ const AUTH_DIR = path.resolve(__dirname, ".auth");
 const OWNER_STATE = path.join(AUTH_DIR, "owner.json");
 const MEMBER_STATE = path.join(AUTH_DIR, "member.json");
 const OTHER_STATE = path.join(AUTH_DIR, "other.json");
+const CONTENT_FACTORY_STATE = path.join(AUTH_DIR, "content-factory.json");
 
 const TEST_PASSWORD = "HouseVibeTest123!";
 const TS = Date.now();
@@ -123,9 +124,37 @@ setup("create other-workspace auth state", async ({ browser }) => {
   }
 });
 
+setup("create content-factory auth state", async ({ browser }) => {
+  if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
+
+  const email = `cf-user-${TS}@example.invalid`;
+  const userId = await createUser(email);
+
+  // Grant content_factory entitlement via service role
+  const supabase = getSupabaseAdmin();
+  await supabase.from("feature_entitlements").insert({
+    user_id: userId,
+    feature: "content_factory",
+    status: "active",
+    granted_by: userId, // self-granted for test
+  });
+
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  try {
+    await doLogin(page, email, TEST_PASSWORD, "Content-Factory-E2E-WS");
+    await context.storageState({ path: CONTENT_FACTORY_STATE });
+    console.log(`[auth.setup] Content factory state saved: ${CONTENT_FACTORY_STATE}`);
+  } finally {
+    await context.close();
+    fs.writeFileSync(CONTENT_FACTORY_STATE + ".userid", userId);
+  }
+});
+
 // Cleanup helper (exported for use after all tests)
 export async function cleanupAuthUsers() {
-  for (const stateFile of [OWNER_STATE, MEMBER_STATE, OTHER_STATE]) {
+  for (const stateFile of [OWNER_STATE, MEMBER_STATE, OTHER_STATE, CONTENT_FACTORY_STATE]) {
     const userIdFile = stateFile + ".userid";
     if (fs.existsSync(userIdFile)) {
       const userId = fs.readFileSync(userIdFile, "utf-8").trim();

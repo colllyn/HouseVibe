@@ -40,6 +40,16 @@ describe("Dashboard Schemas", () => {
       });
       expect(result.success).toBe(false);
     });
+
+    it("rejects extra unknown fields", () => {
+      const result = TaskStatSchema.safeParse({
+        total_pending: 5,
+        overdue_count: 2,
+        today_count: 1,
+        extra: true,
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   describe("ClientStatSchema", () => {
@@ -60,6 +70,39 @@ describe("Dashboard Schemas", () => {
       });
       expect(result.success).toBe(true);
     });
+
+    it("rejects negative counts", () => {
+      const result = ClientStatSchema.safeParse({
+        total: -1,
+        need_follow_up: 3,
+        new_today: 0,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects missing fields", () => {
+      const result = ClientStatSchema.safeParse({ total: 5 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-number values", () => {
+      const result = ClientStatSchema.safeParse({
+        total: "10",
+        need_follow_up: 3,
+        new_today: 0,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects extra unknown fields", () => {
+      const result = ClientStatSchema.safeParse({
+        total: 10,
+        need_follow_up: 3,
+        new_today: 0,
+        extra_field: "should be rejected",
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   describe("PropertyStatSchema", () => {
@@ -71,6 +114,48 @@ describe("Dashboard Schemas", () => {
       });
       expect(result.success).toBe(true);
     });
+
+    it("accepts all zeros (empty state)", () => {
+      const result = PropertyStatSchema.safeParse({
+        total: 0,
+        recent_count: 0,
+        available_soon: 0,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects negative counts", () => {
+      const result = PropertyStatSchema.safeParse({
+        total: 20,
+        recent_count: -5,
+        available_soon: 3,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects missing fields", () => {
+      const result = PropertyStatSchema.safeParse({ total: 20 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-number values", () => {
+      const result = PropertyStatSchema.safeParse({
+        total: "20",
+        recent_count: 5,
+        available_soon: 3,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects extra unknown fields", () => {
+      const result = PropertyStatSchema.safeParse({
+        total: 20,
+        recent_count: 5,
+        available_soon: 3,
+        extra: true,
+      });
+      expect(result.success).toBe(false);
+    });
   });
 
   describe("ContentStatSchema", () => {
@@ -80,6 +165,44 @@ describe("Dashboard Schemas", () => {
         unpublished_count: 2,
       });
       expect(result.success).toBe(true);
+    });
+
+    it("accepts all zeros (empty state)", () => {
+      const result = ContentStatSchema.safeParse({
+        recent_count: 0,
+        unpublished_count: 0,
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it("rejects negative counts", () => {
+      const result = ContentStatSchema.safeParse({
+        recent_count: -8,
+        unpublished_count: 2,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects missing fields", () => {
+      const result = ContentStatSchema.safeParse({ recent_count: 5 });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects non-number values", () => {
+      const result = ContentStatSchema.safeParse({
+        recent_count: "8",
+        unpublished_count: 2,
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects extra unknown fields", () => {
+      const result = ContentStatSchema.safeParse({
+        recent_count: 8,
+        unpublished_count: 2,
+        extra: "nope",
+      });
+      expect(result.success).toBe(false);
     });
   });
 
@@ -121,6 +244,18 @@ describe("Dashboard Schemas", () => {
     it("rejects missing top-level fields", () => {
       const result = DashboardDataSchema.safeParse({
         tasks: { total_pending: 5, overdue_count: 2, today_count: 1 },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it("rejects extra unknown top-level fields", () => {
+      const result = DashboardDataSchema.safeParse({
+        tasks: { total_pending: 5, overdue_count: 2, today_count: 1 },
+        clients: { total: 10, need_follow_up: 3, new_today: 1 },
+        properties: { total: 20, recent_count: 5, available_soon: 3 },
+        content: null,
+        isContentUser: false,
+        unexpected: "should be rejected",
       });
       expect(result.success).toBe(false);
     });

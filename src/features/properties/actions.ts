@@ -27,10 +27,18 @@ export async function getPropertyById(propertyId: string) {
       .from("properties").select("*")
       .eq("id", propertyId).eq("workspace_id", workspaceId).is("deleted_at", null).single();
     if (!property) return null;
-    const { data: pd } = await supabase
-      .from("property_private_details").select("*")
-      .eq("property_id", propertyId).eq("workspace_id", workspaceId).maybeSingle();
-    return { ...property, private_details: pd ?? null };
+
+    // Fetch private details and media count in parallel
+    const [{ data: pd }, { count: media_count }] = await Promise.all([
+      supabase
+        .from("property_private_details").select("*")
+        .eq("property_id", propertyId).eq("workspace_id", workspaceId).maybeSingle(),
+      supabase
+        .from("property_media").select("*", { count: "exact", head: true })
+        .eq("property_id", propertyId).is("deleted_at", null),
+    ]);
+
+    return { ...property, private_details: pd ?? null, media_count: media_count ?? 0 };
   } catch { return null; }
 }
 

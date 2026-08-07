@@ -7,6 +7,9 @@ import { CoverImage, MediaGrid, MediaGridSkeleton } from "@/components/ui/media-
 import { DeletePropertyButton } from "./delete-button";
 import { PropertyShareSection } from "@/features/collaboration/components/property-share-section";
 import { PropertyMatchSection } from "./matches-section";
+import { AnalyzeImagesButton } from "@/features/properties/components/analyze-images-button";
+import { VisualSummarySection } from "@/features/properties/components/visual-summary-section";
+import type { VisualFactFlag } from "@/features/properties/components/visual-summary-section";
 
 function DetailSkeleton() {
   return <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-3xl mx-auto animate-pulse space-y-6"><div className="h-6 bg-muted rounded w-32" /><div className="h-8 bg-muted rounded w-3/4" /><div className="h-4 bg-muted rounded w-1/2" /><div className="h-20 bg-muted rounded" /><div className="h-20 bg-muted rounded" /></div>;
@@ -28,6 +31,7 @@ async function PropertyDetailContent({ propertyId }: { propertyId: string }) {
   if (!property) notFound();
 
   const pd = property.private_details;
+  const mediaCount = (property as Record<string, unknown>).media_count as number ?? 0;
 
   return (
     <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-3xl mx-auto">
@@ -113,7 +117,17 @@ async function PropertyDetailContent({ propertyId }: { propertyId: string }) {
             <MediaGrid propertyId={property.id} />
           </Suspense>
         </div>
+        {/* AI Image Analysis — P3-AI-006 */}
+        <div className="px-4 pb-3">
+          <AnalyzeImagesButton propertyId={property.id} mediaCount={mediaCount} />
+        </div>
       </section>
+
+      {/* Visual AI Analysis Results — P3-AI-006 */}
+      <VisualSummarySection
+        visualSummary={property.visual_summary ?? null}
+        visualFactFlags={(property.visual_fact_flags as VisualFactFlag[] | null) ?? null}
+      />
 
       {/* Property Matches */}
       <Suspense fallback={<div className="rounded-lg border mb-6 animate-pulse"><div className="h-10 bg-muted rounded-t-lg" /><div className="p-4 space-y-3"><div className="h-20 bg-muted rounded" /></div></div>}>

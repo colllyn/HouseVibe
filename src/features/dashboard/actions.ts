@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { hasFeature } from "@/features/access-control/guards";
+import { DashboardDataSchema } from "./schemas";
 import type { DashboardData, TaskStat, ClientStat, PropertyStat, ContentStat } from "./schemas";
 
 // ============================================================
@@ -43,119 +44,134 @@ function dateStr(d: Date): string {
 }
 
 async function fetchTaskStats(workspaceId: string): Promise<TaskStat> {
-  const supabase = await createClient();
-  const { todayStart, todayEnd } = todayRange();
+  try {
+    const supabase = await createClient();
+    const { todayStart, todayEnd } = todayRange();
 
-  // Total pending tasks: active status only (exclude completed and cancelled)
-  const { count: total_pending } = await supabase
-    .from("tasks")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .is("deleted_at", null)
-    .in("status", ["todo", "in_progress"]);
+    // Total pending tasks: active status only (exclude done and cancelled)
+    const { count: total_pending } = await supabase
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .in("status", ["todo", "in_progress"]);
 
-  // Overdue: due_at < now, active status only
-  const now = new Date().toISOString();
-  const { count: overdue_count } = await supabase
-    .from("tasks")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .is("deleted_at", null)
-    .in("status", ["todo", "in_progress"])
-    .lt("due_at", now);
+    // Overdue: due_at < now, active status only
+    const now = new Date().toISOString();
+    const { count: overdue_count } = await supabase
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .in("status", ["todo", "in_progress"])
+      .lt("due_at", now);
 
-  // Created today
-  const { count: today_count } = await supabase
-    .from("tasks")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .is("deleted_at", null)
-    .gte("created_at", todayStart)
-    .lt("created_at", todayEnd);
+    // Created today
+    const { count: today_count } = await supabase
+      .from("tasks")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .gte("created_at", todayStart)
+      .lt("created_at", todayEnd);
 
-  return {
-    total_pending: total_pending ?? 0,
-    overdue_count: overdue_count ?? 0,
-    today_count: today_count ?? 0,
-  };
+    return {
+      total_pending: total_pending ?? 0,
+      overdue_count: overdue_count ?? 0,
+      today_count: today_count ?? 0,
+    };
+  } catch (err) {
+    console.error("[dashboard] fetchTaskStats failed:", err);
+    return { total_pending: 0, overdue_count: 0, today_count: 0 };
+  }
 }
 
 async function fetchClientStats(workspaceId: string): Promise<ClientStat> {
-  const supabase = await createClient();
-  const { todayStart, todayEnd } = todayRange();
-  const now = new Date().toISOString();
+  try {
+    const supabase = await createClient();
+    const { todayStart, todayEnd } = todayRange();
+    const now = new Date().toISOString();
 
-  // Total active clients
-  const { count: total } = await supabase
-    .from("clients")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .is("deleted_at", null);
+    // Total active clients
+    const { count: total } = await supabase
+      .from("clients")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null);
 
-  // Need follow-up: next_follow_up_at <= now, not archived
-  const { count: need_follow_up } = await supabase
-    .from("clients")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .is("deleted_at", null)
-    .lte("next_follow_up_at", now)
-    .neq("stage", "archived");
+    // Need follow-up: next_follow_up_at <= now, not archived
+    const { count: need_follow_up } = await supabase
+      .from("clients")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .lte("next_follow_up_at", now)
+      .neq("stage", "archived");
 
-  // New today
-  const { count: new_today } = await supabase
-    .from("clients")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .is("deleted_at", null)
-    .gte("created_at", todayStart)
-    .lt("created_at", todayEnd);
+    // New today
+    const { count: new_today } = await supabase
+      .from("clients")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .gte("created_at", todayStart)
+      .lt("created_at", todayEnd);
 
-  return {
-    total: total ?? 0,
-    need_follow_up: need_follow_up ?? 0,
-    new_today: new_today ?? 0,
-  };
+    return {
+      total: total ?? 0,
+      need_follow_up: need_follow_up ?? 0,
+      new_today: new_today ?? 0,
+    };
+  } catch (err) {
+    console.error("[dashboard] fetchClientStats failed:", err);
+    return { total: 0, need_follow_up: 0, new_today: 0 };
+  }
 }
 
 async function fetchPropertyStats(workspaceId: string): Promise<PropertyStat> {
-  const supabase = await createClient();
+  try {
+    const supabase = await createClient();
 
-  // Total active properties
-  const { count: total } = await supabase
-    .from("properties")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .is("deleted_at", null)
-    .neq("status", "deleted");
+    // Total active properties
+    const { count: total } = await supabase
+      .from("properties")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .neq("status", "deleted");
 
-  // Recent (last 7 days)
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { count: recent_count } = await supabase
-    .from("properties")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .is("deleted_at", null)
-    .gte("created_at", sevenDaysAgo);
+    // Recent (last 7 days)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { count: recent_count } = await supabase
+      .from("properties")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .is("deleted_at", null)
+      .gte("created_at", sevenDaysAgo);
 
-  // Available soon: available_from is a `date` column — use date-only strings
-  // to avoid timestamptz→date casting issues that exclude today's date.
-  const now = new Date();
-  const todayStr = dateStr(now);
-  const thirtyDaysStr = dateStr(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
-  const { count: available_soon } = await supabase
-    .from("properties")
-    .select("*", { count: "exact", head: true })
-    .eq("workspace_id", workspaceId)
-    .eq("status", "available")
-    .is("deleted_at", null)
-    .gte("available_from", todayStr)
-    .lte("available_from", thirtyDaysStr);
+    // Available soon: available_from is a `date` column — use date-only strings
+    // to avoid timestamptz→date casting issues that exclude today's date.
+    const now = new Date();
+    const todayStr = dateStr(now);
+    const thirtyDaysStr = dateStr(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+    const { count: available_soon } = await supabase
+      .from("properties")
+      .select("*", { count: "exact", head: true })
+      .eq("workspace_id", workspaceId)
+      .eq("status", "available")
+      .is("deleted_at", null)
+      .gte("available_from", todayStr)
+      .lte("available_from", thirtyDaysStr);
 
-  return {
-    total: total ?? 0,
-    recent_count: recent_count ?? 0,
-    available_soon: available_soon ?? 0,
-  };
+    return {
+      total: total ?? 0,
+      recent_count: recent_count ?? 0,
+      available_soon: available_soon ?? 0,
+    };
+  } catch (err) {
+    console.error("[dashboard] fetchPropertyStats failed:", err);
+    return { total: 0, recent_count: 0, available_soon: 0 };
+  }
 }
 
 async function fetchContentStats(workspaceId: string): Promise<ContentStat | null> {
@@ -205,11 +221,11 @@ export async function getDashboardData(): Promise<DashboardData> {
     fetchContentStats(workspaceId),
   ]);
 
-  return {
+  return DashboardDataSchema.parse({
     tasks,
     clients,
     properties,
     content,
     isContentUser: content !== null,
-  };
+  });
 }
