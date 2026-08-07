@@ -10,6 +10,7 @@ import {
   FileText,
   Settings,
   Home,
+  GitMerge,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const navItems: NavItem[] = [
   { label: "首页", href: "/", icon: Home },
   { label: "房源", href: "/properties", icon: Building2 },
   { label: "客户", href: "/clients", icon: Users },
+  { label: "房客匹配", href: "/matches", icon: GitMerge },
   { label: "内容", href: "/content", icon: FileText },
   { label: "设置", href: "/settings/profile", icon: Settings },
 ];

@@ -6,6 +6,7 @@ import { ArrowLeft, MapPin, Lock, Pencil } from "lucide-react";
 import { CoverImage, MediaGrid, MediaGridSkeleton } from "@/components/ui/media-grid";
 import { DeletePropertyButton } from "./delete-button";
 import { PropertyShareSection } from "@/features/collaboration/components/property-share-section";
+import { PropertyMatchSection } from "./matches-section";
 
 function DetailSkeleton() {
   return <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-3xl mx-auto animate-pulse space-y-6"><div className="h-6 bg-muted rounded w-32" /><div className="h-8 bg-muted rounded w-3/4" /><div className="h-4 bg-muted rounded w-1/2" /><div className="h-20 bg-muted rounded" /><div className="h-20 bg-muted rounded" /></div>;
@@ -113,6 +114,11 @@ async function PropertyDetailContent({ propertyId }: { propertyId: string }) {
           </Suspense>
         </div>
       </section>
+
+      {/* Property Matches */}
+      <Suspense fallback={<div className="rounded-lg border mb-6 animate-pulse"><div className="h-10 bg-muted rounded-t-lg" /><div className="p-4 space-y-3"><div className="h-20 bg-muted rounded" /></div></div>}>
+        <PropertyMatchSection propertyId={property.id} />
+      </Suspense>
     </div>
   );
 }

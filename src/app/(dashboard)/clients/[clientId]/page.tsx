@@ -6,6 +6,8 @@ import Link from "next/link";
 import { ArrowLeft, MapPin, Pencil, Loader2, Phone, MessageCircle } from "lucide-react";
 import { StageBadge, STAGE_LABELS } from "@/features/clients/components/stage-badge";
 import { InteractionTimeline } from "@/features/clients/components/interaction-timeline";
+import { MatchList } from "@/features/matching/components";
+import type { MatchItem } from "@/features/matching/components/match-list";
 import { cn } from "@/lib/utils";
 
 interface ClientData {
@@ -60,6 +62,12 @@ export default function ClientDetailPage() {
   const [stageUpdating, setStageUpdating] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
 
+  // Matches
+  const [matches, setMatches] = React.useState<MatchItem[]>([]);
+  const [matchesLoading, setMatchesLoading] = React.useState(false);
+  const [matchesError, setMatchesError] = React.useState<string | null>(null);
+  const [calculatingMatches, setCalculatingMatches] = React.useState(false);
+
   const fetchClient = React.useCallback(async () => {
     setLoading(true);
     setLoadError(null);
@@ -102,6 +110,68 @@ export default function ClientDetailPage() {
       window.location.href = "/clients";
     } catch { setLoadError("删除失败，请重试"); }
     setDeleting(false);
+  };
+
+  // --- Match handlers ---
+
+  const fetchMatches = React.useCallback(async () => {
+    setMatchesLoading(true);
+    setMatchesError(null);
+    try {
+      const resp = await fetch(`/api/clients/${clientId}/matches`);
+      const json = await resp.json();
+      if (!resp.ok) {
+        setMatchesError(json.error?.message ?? "加载失败");
+        setMatches([]);
+      } else {
+        setMatches((json.data ?? []) as MatchItem[]);
+      }
+    } catch {
+      setMatchesError("加载失败");
+      setMatches([]);
+    }
+    setMatchesLoading(false);
+  }, [clientId]);
+
+  React.useEffect(() => { fetchMatches(); }, [fetchMatches]);
+
+  const handleCalculateMatches = async () => {
+    setCalculatingMatches(true);
+    setMatchesError(null);
+    try {
+      const resp = await fetch("/api/matches/calculate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clientId }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) {
+        setMatchesError(json.error?.message ?? "计算失败");
+      } else {
+        await fetchMatches();
+      }
+    } catch {
+      setMatchesError("计算失败");
+    }
+    setCalculatingMatches(false);
+  };
+
+  const handleDismissMatch = async (matchId: string) => {
+    await fetch(`/api/matches/${matchId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "dismissed" }),
+    });
+    fetchMatches();
+  };
+
+  const handleArchiveMatch = async (matchId: string) => {
+    await fetch(`/api/matches/${matchId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "archived" }),
+    });
+    fetchMatches();
   };
 
   if (loading) return <DetailSkeleton />;
@@ -248,6 +318,37 @@ export default function ClientDetailPage() {
           </div>
         </section>
       ) : null}
+
+      {/* Property Matches */}
+      <section className="rounded-lg border mb-6">
+        <h2 className="font-semibold text-sm px-4 py-3 border-b flex items-center justify-between">
+          <span>房源匹配</span>
+          <button
+            type="button"
+            onClick={handleCalculateMatches}
+            disabled={calculatingMatches}
+            className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            style={{ minHeight: 36 }}
+          >
+            {calculatingMatches ? <Loader2 className="size-3 animate-spin" /> : null}
+            计算匹配
+          </button>
+        </h2>
+        <div className="px-4 py-3">
+          <MatchList
+            matches={matches}
+            view="client"
+            loading={matchesLoading}
+            error={matchesError}
+            onRetry={fetchMatches}
+            onDismiss={handleDismissMatch}
+            onArchive={handleArchiveMatch}
+            onRecalculate={handleCalculateMatches}
+            emptyTitle="暂无匹配结果"
+            emptyDescription="点击右上角「计算匹配」为该客户匹配房源"
+          />
+        </div>
+      </section>
 
       {/* Interaction Timeline */}
       <InteractionTimeline clientId={client.id} />

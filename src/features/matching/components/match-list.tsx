@@ -4,7 +4,7 @@ import React from "react";
 import { Loader2, AlertTriangle, RefreshCw, Inbox } from "lucide-react";
 import { MatchCard } from "./match-card";
 
-interface MatchItem {
+export interface MatchItem {
   id: string;
   propertyId?: string;
   propertyTitle?: string;
@@ -43,6 +43,7 @@ interface MatchListProps {
   error: string | null;
   onRetry?: () => void;
   onDismiss?: (matchId: string) => void;
+  onArchive?: (matchId: string) => void;
   onRecalculate?: () => void;
   emptyTitle?: string;
   emptyDescription?: string;
@@ -55,6 +56,7 @@ export function MatchList({
   error,
   onRetry,
   onDismiss,
+  onArchive,
   onRecalculate,
   emptyTitle,
   emptyDescription,
@@ -154,6 +156,7 @@ export function MatchList({
             match={match}
             view={view}
             onDismiss={onDismiss}
+            onArchive={onArchive}
             disabled={false}
           />
         ))}

@@ -126,7 +126,7 @@ describe("DesktopSidebar", () => {
   });
 
   describe("enabled items", () => {
-    it.each(["工作台", "首页", "房源", "客户", "内容", "设置"])("%s is a <Link> component (renders as <a>)", (label) => {
+    it.each(["工作台", "首页", "房源", "客户", "房客匹配", "内容", "设置"])("%s is a <Link> component (renders as <a>)", (label) => {
       render(<DesktopSidebar />);
       const allMatching = screen.getAllByText(label);
       let found = false;
@@ -141,7 +141,7 @@ describe("DesktopSidebar", () => {
       expect(found).toBe(true);
     });
 
-    it.each(["工作台", "首页", "房源", "客户", "内容", "设置"])("%s does NOT have aria-disabled", (label) => {
+    it.each(["工作台", "首页", "房源", "客户", "房客匹配", "内容", "设置"])("%s does NOT have aria-disabled", (label) => {
       render(<DesktopSidebar />);
       const allMatching = screen.getAllByText(label);
       let checked = false;
@@ -173,6 +173,7 @@ describe("DesktopSidebar", () => {
       expect(linkTexts.some((t) => t?.includes("首页"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("房源"))).toBe(true); // Phase 2: enabled
       expect(linkTexts.some((t) => t?.includes("客户"))).toBe(true);
+      expect(linkTexts.some((t) => t?.includes("房客匹配"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("内容"))).toBe(true);
       expect(linkTexts.some((t) => t?.includes("设置"))).toBe(true);
     });
