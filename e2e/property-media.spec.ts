@@ -13,6 +13,25 @@ const OWNER_STATE = path.resolve(__dirname, ".auth/owner.json");
 const OTHER_STATE = path.resolve(__dirname, ".auth/other.json");
 
 // ---------------------------------------------------------------------------
+// Minimal valid 1x1 PNG image bytes (67 bytes).
+// Sharp requires valid image data for EXIF stripping; byte-filled garbage fails.
+// Trailing padding beyond IEND is ignored by PNG parsers, allowing arbitrary
+// file sizes by appending zeroes after the valid PNG data.
+// ---------------------------------------------------------------------------
+// Valid 1x1 red PNG (69 bytes), generated from e2e/fixtures/1x1.png
+const VALID_1X1_PNG_BYTES = [
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+  0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+  0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+  0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+  0x00, 0x03, 0x01, 0x01, 0x00, 0xC9, 0xFE, 0x92,
+  0xEF, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+  0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -32,6 +51,9 @@ async function createProperty(page: import("@playwright/test").Page, data: {
  * Upload a media file by calling fetch() from the browser page context.
  * Uses multipart/form-data to POST to the media endpoint.
  * Returns the JSON response body.
+ *
+ * @param fileSizeBytes — minimum file size; the actual Blob will be at least
+ *   this large. Set to 0 for tests that only check rejection codes.
  */
 async function uploadMedia(
   page: import("@playwright/test").Page,
@@ -39,10 +61,26 @@ async function uploadMedia(
   fileName: string,
   fileType: string,
   fileSizeBytes: number = 1024,
+  validImage: boolean = true,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
+  // Build the Blob in Node.js land so we can inject valid PNG bytes.
+  // Transfer the raw bytes to the browser via evaluate argument.
+  const blobBytes = validImage
+    ? (() => {
+        const minSize = Math.max(fileSizeBytes, VALID_1X1_PNG_BYTES.length);
+        const data = new Uint8Array(minSize);
+        data.set(VALID_1X1_PNG_BYTES);
+        return Array.from(data);
+      })()
+    : (() => {
+        const data = new Uint8Array(Math.max(fileSizeBytes, 128));
+        return Array.from(data);
+      })();
+
   const result = await page.evaluate(
-    async ({ propId, fName, fType, fSize, base }) => {
-      const blob = new Blob([new Uint8Array(fSize).fill(120)], { type: fType });
+    async ({ propId, fName, fType, fBytes, base }) => {
+      const data = new Uint8Array(fBytes);
+      const blob = new Blob([data], { type: fType });
       const file = new File([blob], fName, { type: fType });
       const formData = new FormData();
       formData.append("files", file);
@@ -61,7 +99,7 @@ async function uploadMedia(
 
       return { status: res.status, body };
     },
-    { propId: propertyId, fName: fileName, fType: fileType, fSize: fileSizeBytes, base: BASE_URL }
+    { propId: propertyId, fName: fileName, fType: fileType, fBytes: blobBytes, base: BASE_URL }
   );
 
   return result;
@@ -318,9 +356,11 @@ test.describe("Property Media", () => {
       city: "Suzhou",
     });
 
-    // Manual multipart fetch with 2 files: one good, one bad
-    const result = await page.evaluate(async (propId: string) => {
-      const goodFile = new File([new Uint8Array(512).fill(120)], "good.jpg", { type: "image/jpeg" });
+    // Embed valid PNG bytes for the "good" file
+    const pngBytes = Array.from(VALID_1X1_PNG_BYTES);
+
+    const result = await page.evaluate(async ({ propId, pngBytes }: { propId: string; pngBytes: number[] }) => {
+      const goodFile = new File([new Uint8Array(pngBytes)], "good.png", { type: "image/png" });
       const badFile = new File([new Uint8Array(256)], "bad.pdf", { type: "application/pdf" });
       const fd = new FormData();
       fd.append("files", goodFile);
@@ -331,7 +371,7 @@ test.describe("Property Media", () => {
         body: fd,
       });
       return { status: res.status, body: await res.json() };
-    }, propId);
+    }, { propId, pngBytes });
 
     expect(result.status).toBe(207);
     const data = result.body.data as Record<string, unknown>;
@@ -438,25 +478,27 @@ test.describe("Property Media", () => {
       city: "Haikou",
     });
 
-    // Upload 20 files (each 64 bytes to stay small and fast)
-    const results = await page.evaluate(async (id: string) => {
+    const pngBytes = Array.from(VALID_1X1_PNG_BYTES);
+
+    // Upload 20 files (using valid PNG bytes)
+    const results = await page.evaluate(async ({ id, pngBytes }: { id: string; pngBytes: number[] }) => {
       const uploaded: number[] = [];
       for (let batch = 0; batch < 4; batch++) {
         const fd = new FormData();
         for (let i = 0; i < 5; i++) {
-          fd.append("files", new File([new Uint8Array(64)], `b${batch}-${i}.jpg`, { type: "image/jpeg" }));
+          fd.append("files", new File([new Uint8Array(pngBytes)], `b${batch}-${i}.png`, { type: "image/png" }));
         }
         const res = await fetch(`/api/properties/${id}/media`, { method: "POST", body: fd });
         uploaded.push(res.status);
       }
       return uploaded;
-    }, propId);
+    }, { id: propId, pngBytes });
 
     // First 4 batches (5 each = 20) should succeed
     expect(results.filter((s) => s === 201)).toHaveLength(4);
 
     // 5th batch should be rejected (limit exceeded)
-    const limitResult = await uploadMedia(page, propId, "over-limit.jpg", "image/jpeg");
+    const limitResult = await uploadMedia(page, propId, "over-limit.png", "image/png");
     expect(limitResult.status).toBe(422);
     expect((limitResult.body.error as Record<string, unknown>).code).toBe("MEDIA_LIMIT_EXCEEDED");
   });
@@ -469,7 +511,7 @@ test.describe("Property Media", () => {
     });
 
     // Upload a 1MB file (reasonable in-browser test; 10MB is too slow for E2E)
-    const result = await uploadMedia(page, propId, "near-limit.jpg", "image/jpeg", 1024 * 1024);
+    const result = await uploadMedia(page, propId, "near-limit.png", "image/png", 1024 * 1024);
     expect(result.status).toBe(201);
     const media = (result.body.data as Record<string, unknown>).media as Record<string, unknown>[];
     expect(media).toHaveLength(1);

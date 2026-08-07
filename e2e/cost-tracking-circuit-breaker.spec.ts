@@ -39,14 +39,14 @@ function uniqueEmail(label: string) {
 
 async function loginAndOnboard(page: Page, email: string) {
   await page.goto("/login");
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await page.fill("#email", email);
   await page.fill("#password", TEST_PASSWORD);
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/(onboarding|dashboard)/, { timeout: 15000 });
 
   if (page.url().includes("/onboarding")) {
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.fill("#workspaceName", "CB-E2E-WS");
     await page.fill("#city", "Beijing");
     await page.click('button[type="submit"]');
@@ -82,7 +82,7 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // Workspace tab should be visible
       const wsTab = page.getByRole("button", { name: "按工作区" });
@@ -124,18 +124,20 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // Click workspace tab
       await page.getByRole("button", { name: "按工作区" }).click();
-      await page.waitForTimeout(800);
+      // Wait for the grouped data to load (API call completes asynchronously)
+      await page.waitForTimeout(2000);
+
+      // At minimum, the heading should be visible
+      await expect(page.getByText("按工作区统计")).toBeVisible({ timeout: 5000 });
 
       // Should show the grouped table (either with data or empty state)
       const hasTable = await page.locator("table").isVisible().catch(() => false);
       const hasEmpty = await page.getByText("暂无数据").isVisible().catch(() => false);
 
-      // At minimum, the heading should be visible
-      await expect(page.getByText("按工作区统计")).toBeVisible({ timeout: 5000 });
       // Either table with data or empty state is acceptable
       expect(hasTable || hasEmpty).toBe(true);
     } finally {
@@ -160,7 +162,7 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-models");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // Should see title
       await expect(page.locator("h1")).toContainText("AI 模型管理", { timeout: 10000 });
@@ -170,7 +172,7 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
       await expect(page.getByText("视觉模型")).toBeVisible({ timeout: 5000 });
 
       // Should see mode labels
-      await expect(page.getByText("熔断: 正常")).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText("熔断: 正常").first()).toBeVisible({ timeout: 5000 });
     } finally {
       await supabase.auth.admin.deleteUser(userId);
     }
@@ -197,7 +199,7 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-models");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // Reset button should NOT be visible when circuit is closed
       const resetBtn = page.getByRole("button", { name: "重置熔断器" });
@@ -215,6 +217,8 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
       email, password: TEST_PASSWORD, email_confirm: true,
     });
     const userId = userData.user!.id;
+    // Create profile first (required by workspaces FK during onboarding)
+    await supabase.from("profiles").upsert({ id: userId, email }, { onConflict: "id" });
     await makeAdmin(supabase, userId);
 
     // Force circuit open for text model
@@ -228,7 +232,8 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-models");
-      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
+      await page.waitForLoadState("domcontentloaded");
 
       // Reset button should be visible when circuit is open
       const resetBtn = page.locator('[data-testid="reset-circuit-text"]');
@@ -274,7 +279,7 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
 
       // Try to access admin AI models page
       await page.goto("/admin/ai-models");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       const url = page.url();
       // Should be redirected away from admin
@@ -304,7 +309,7 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
 
       await page.setViewportSize({ width: 375, height: 812 });
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // Title should be visible
       await expect(page.locator("h1")).toContainText("AI 用量看板", { timeout: 10000 });
@@ -336,7 +341,7 @@ test.describe("P3-AI-015 Cost Tracking & Circuit Breaker", () => {
 
       await page.setViewportSize({ width: 375, height: 812 });
       await page.goto("/admin/ai-models");
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("domcontentloaded");
 
       // Title should be visible
       await expect(page.locator("h1")).toContainText("AI 模型管理", { timeout: 10000 });

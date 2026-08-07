@@ -31,10 +31,28 @@ export async function GET(request: NextRequest) {
       client.rpc("get_runtime_config", { p_capability: "vision" }),
     ]);
 
+    // Transform RPC snake_case response to camelCase for the frontend
+    const toCamelCase = (rpcData: Record<string, unknown> | null) => {
+      if (!rpcData) return null;
+      return {
+        success: rpcData.success,
+        capability: rpcData.capability,
+        mode: rpcData.mode,
+        circuitOpen: rpcData.circuit_open,
+        consecutiveFailures: rpcData.consecutive_failures,
+        firstFailureAt: rpcData.first_failure_at,
+        lastFailureAt: rpcData.last_failure_at,
+        lastHealthCheckAt: rpcData.last_health_check_at,
+        lastHealthCheckOk: rpcData.last_health_check_ok,
+        forcedBy: rpcData.forced_by,
+        forcedAt: rpcData.forced_at,
+      };
+    };
+
     return jsonResponse({
       data: {
-        text: textResult.data?.success ? textResult.data : null,
-        vision: visionResult.data?.success ? visionResult.data : null,
+        text: textResult.data?.success ? toCamelCase(textResult.data) : null,
+        vision: visionResult.data?.success ? toCamelCase(visionResult.data) : null,
       },
       error: null,
     });

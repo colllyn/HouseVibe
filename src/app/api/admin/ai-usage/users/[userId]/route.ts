@@ -1,7 +1,7 @@
 // ============================================================
 // Admin AI Usage — User Management API — P3-AI-017
 // PATCH /api/admin/ai-usage/users/[userId] → set user AI limits
-// POST  /api/admin/ai-usage/users/[userId]/restore → restore access
+// POST  /api/admin/ai-usage/users/[userId] → restore access
 // System admin only.
 // ============================================================
 
@@ -70,7 +70,6 @@ export async function PATCH(
   try {
     const { data, error } = await client.rpc("admin_upsert_user_limits", {
       p_user_id: userId,
-      p_feature: "content_generation",
       p_daily_request_limit: parsed.data.daily_request_limit ?? null,
       p_daily_cost_limit_usd: parsed.data.daily_cost_limit_usd ?? null,
     });
@@ -122,7 +121,6 @@ export async function POST(
   try {
     const { data, error } = await client.rpc("admin_restore_user_access", {
       p_user_id: userId,
-      p_feature: "content_generation",
     });
 
     if (error || !data?.success) {

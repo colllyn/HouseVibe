@@ -156,6 +156,7 @@ export default defineConfig({
       name: "chromium",
       testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows|semantic-search-ui|semantic-search-real|dashboard-flows)).*\.spec\.ts$/,
       use: { browserName: "chromium" },
+      dependencies: ["setup"],
     },
   ],
 });

@@ -58,7 +58,7 @@ export default function NewContentPage() {
         setPropertiesError(json.error?.message ?? "加载房源失败");
         return;
       }
-      const list = (json.data?.data ?? []) as PropertyOption[];
+      const list = (json.data?.properties ?? []) as PropertyOption[];
       setProperties(list.filter(p => p.allow_marketing_reuse));
     } catch {
       setPropertiesError("网络错误");

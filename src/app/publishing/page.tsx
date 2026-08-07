@@ -99,7 +99,7 @@ export default function PublishingPage() {
         return;
       }
       const projectsJson = await projectsRes.json();
-      const projects: ContentProject[] = projectsJson.data ?? [];
+      const projects: ContentProject[] = projectsJson.data?.data ?? [];
 
       // Fetch publishing records for each project
       const allRecords: PublishingRecord[] = [];

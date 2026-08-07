@@ -40,14 +40,14 @@ function uniqueEmail(label: string) {
 
 async function loginAndOnboard(page: Page, email: string) {
   await page.goto("/login");
-  await page.waitForLoadState("networkidle");
+  await page.waitForLoadState("domcontentloaded");
   await page.fill("#email", email);
   await page.fill("#password", TEST_PASSWORD);
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/(onboarding|dashboard)/, { timeout: 15000 });
 
   if (page.url().includes("/onboarding")) {
-    await page.waitForLoadState("networkidle");
+    await page.waitForLoadState("domcontentloaded");
     await page.fill("#workspaceName", "AI-Usage-E2E-WS");
     await page.fill("#city", "Beijing");
     await page.click('button[type="submit"]');
@@ -95,7 +95,8 @@ test.describe("AI Usage Admin Dashboard", () => {
 
       // Navigate to AI usage dashboard
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
+      await page.waitForLoadState("domcontentloaded");
 
       // Should see the title
       await expect(page.locator("h1")).toContainText("AI 用量看板", { timeout: 10000 });
@@ -146,7 +147,8 @@ test.describe("AI Usage Admin Dashboard", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
+      await page.waitForLoadState("domcontentloaded");
 
       // Switch period to 7d
       await page.getByRole("button", { name: "近 7 日" }).click();
@@ -201,7 +203,8 @@ test.describe("AI Usage Admin Dashboard", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
+      await page.waitForLoadState("domcontentloaded");
 
       // Fill in the user ID and limits
       await page.fill('input[placeholder*="xxxxxxxx"]', targetId);
@@ -239,6 +242,9 @@ test.describe("AI Usage Admin Dashboard", () => {
     });
     const adminId = userData.user!.id;
 
+    // Create profile first (required by workspaces FK during onboarding)
+    await supabase.from("profiles").upsert({ id: adminId, email }, { onConflict: "id" });
+
     await supabase.from("system_admins").insert({
       user_id: adminId, status: "active", created_by: adminId,
     });
@@ -262,7 +268,8 @@ test.describe("AI Usage Admin Dashboard", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
+      await page.waitForLoadState("domcontentloaded");
 
       // Fill in the blocked user's ID
       await page.fill('input[placeholder*="xxxxxxxx"]', targetId);
@@ -304,7 +311,8 @@ test.describe("AI Usage Admin Dashboard", () => {
 
       // Try to access admin AI usage page
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
+      await page.waitForLoadState("domcontentloaded");
 
       const url = page.url();
       // Should be redirected away from admin
@@ -331,7 +339,8 @@ test.describe("AI Usage Admin Dashboard", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
+      await page.waitForLoadState("domcontentloaded");
 
       // The page should either show loaded content or an error state
       // Both are valid — we verify the page doesn't crash
@@ -370,7 +379,8 @@ test.describe("AI Usage Admin Dashboard", () => {
     try {
       await loginAndOnboard(page, email);
       await page.goto("/admin/ai-usage");
-      await page.waitForLoadState("networkidle");
+      await page.waitForTimeout(1500);
+      await page.waitForLoadState("domcontentloaded");
 
       // Should still show the title
       await expect(page.locator("h1")).toContainText("AI 用量看板", { timeout: 10000 });
