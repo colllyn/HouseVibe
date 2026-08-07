@@ -47,7 +47,9 @@ function mimeTypeToSharpFormat(
     case "image/webp":
       return "webp";
     case "image/gif":
-      return "gif";
+      // sharp GIF output is unreliable; convert GIF to PNG to guarantee
+      // deterministic EXIF stripping without format-specific failures.
+      return "png";
     case "image/jpeg":
     default:
       return "jpeg";

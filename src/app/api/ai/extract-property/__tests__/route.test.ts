@@ -18,14 +18,16 @@ import type {
 // Hoisted Mocks
 // ============================================================
 
-const { mockGetUser, mockFromSingle, mockHasFeature } = vi.hoisted(() => {
+const { mockGetUser, mockFromSingle, mockHasFeature, mockRpc } = vi.hoisted(() => {
   const _mockGetUser = vi.fn();
   const _mockFromSingle = vi.fn();
   const _mockHasFeature = vi.fn();
+  const _mockRpc = vi.fn().mockResolvedValue({ data: { success: true, reservation_id: "res-test-1" }, error: null });
   return {
     mockGetUser: _mockGetUser,
     mockFromSingle: _mockFromSingle,
     mockHasFeature: _mockHasFeature,
+    mockRpc: _mockRpc,
   };
 });
 
@@ -51,7 +53,7 @@ function buildSupabaseClient() {
     client: {
       auth: { getUser: mockGetUser },
       from: () => buildQueryBuilder(),
-      rpc: () => Promise.resolve({ data: { success: true, reservation_id: "res-test-1" }, error: null }),
+      rpc: mockRpc,
     },
     jsonResponse: (
       body: unknown,
@@ -200,6 +202,8 @@ describe("POST /api/ai/extract-property", () => {
     mockGetUser.mockReset();
     mockFromSingle.mockReset();
     mockHasFeature.mockReset();
+    mockRpc.mockReset();
+    mockRpc.mockResolvedValue({ data: { success: true, reservation_id: "res-test-1" }, error: null });
     setupAuth();
     setEntitlement(true);
   });
@@ -696,5 +700,89 @@ describe("POST /api/ai/extract-property", () => {
     const serialized = JSON.stringify(body);
     expect(serialized).not.toContain("13800000001");
     expect(serialized).not.toContain("440106199001011234");
+  });
+
+  // --- Quota Lifecycle Failure Paths ---
+
+  // 30. Quota reserve: RPC error → 429 QUOTA_CHECK_FAILED
+  it("30: quota reserve RPC error → 429 QUOTA_CHECK_FAILED", async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: "db error" } });
+    const handler = createHandler();
+    const res = await handler(makeRequest({ text: "天河区一房" }));
+    expect(res.status).toBe(429);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("QUOTA_CHECK_FAILED");
+  });
+
+  // 31. Quota reserve: success=false (quota exhausted) → 429 QUOTA_EXCEEDED
+  it("31: quota exhausted → 429 QUOTA_EXCEEDED", async () => {
+    mockRpc.mockResolvedValue({ data: { success: false }, error: null });
+    const handler = createHandler();
+    const res = await handler(makeRequest({ text: "天河区一房" }));
+    expect(res.status).toBe(429);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("QUOTA_EXCEEDED");
+  });
+
+  // 32. Quota reserve: success=false, cost_limit → 429 COST_LIMIT_EXCEEDED
+  it("32: cost limit exceeded → 429 COST_LIMIT_EXCEEDED", async () => {
+    mockRpc.mockResolvedValue({ data: { success: false, limit_reason: "cost_limit" }, error: null });
+    const handler = createHandler();
+    const res = await handler(makeRequest({ text: "天河区一房" }));
+    expect(res.status).toBe(429);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("COST_LIMIT_EXCEEDED");
+  });
+
+  // 33. Quota reserve: already_reserved → 409 CONFLICT
+  it("33: idempotency key conflict → 409 CONFLICT", async () => {
+    mockRpc.mockResolvedValue({ data: { success: true, already_reserved: true }, error: null });
+    const handler = createHandler();
+    const res = await handler(makeRequest({ text: "天河区一房" }));
+    expect(res.status).toBe(409);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("CONFLICT");
+  });
+
+  // 34. Quota settle called after successful Provider call
+  it("34: settleQuota is called after successful Provider call", async () => {
+    let settleCalled = false;
+    mockRpc.mockImplementation(async (fn: string) => {
+      if (fn === "reserve_ai_quota") return { data: { success: true, reservation_id: "res-test-1" }, error: null };
+      if (fn === "settle_ai_quota") { settleCalled = true; return { data: { success: true }, error: null }; }
+      return { data: null, error: null };
+    });
+    const handler = createHandler();
+    await handler(makeRequest({ text: "天河区一房" }));
+    expect(settleCalled).toBe(true);
+  });
+
+  // 35. Quota release called after Provider error
+  it("35: releaseQuota is called after Provider error", async () => {
+    let releaseCalled = false;
+    mockRpc.mockImplementation(async (fn: string) => {
+      if (fn === "reserve_ai_quota") return { data: { success: true, reservation_id: "res-test-1" }, error: null };
+      if (fn === "release_ai_quota") { releaseCalled = true; return { data: { success: true }, error: null }; }
+      return { data: null, error: null };
+    });
+    // Provider that throws
+    const provider = makeMockProvider({
+      extractProperty: async () => {
+        throw new DeepSeekProviderError({
+          code: "AI_UPSTREAM_ERROR",
+          message: "upstream error",
+          requestId: "req-1",
+          retryable: true,
+          suggestedHttpStatus: 502,
+        });
+      },
+    });
+    const handler = createHandler(provider);
+    await handler(makeRequest({ text: "天河区一房" }));
+    expect(releaseCalled).toBe(true);
   });
 });

@@ -43,5 +43,17 @@ export async function updateSession(request: NextRequest) {
   // This is the recommended approach; getSession() only reads the local JWT.
   const { data: { user } } = await supabase.auth.getUser();
 
-  return { response, user };
+  // Check if the user's profile is soft-deleted. Deleted users are blocked
+  // from protected routes even if they hold a valid auth session.
+  let deleted = false;
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("deleted_at")
+      .eq("id", user.id)
+      .maybeSingle();
+    deleted = !!profile?.deleted_at;
+  }
+
+  return { response, user, deleted };
 }

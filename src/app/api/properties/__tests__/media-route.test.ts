@@ -14,6 +14,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
 // ---------------------------------------------------------------------------
+// Polyfill: jsdom File does not implement arrayBuffer()
+// ---------------------------------------------------------------------------
+
+if (typeof File !== "undefined" && !File.prototype.arrayBuffer) {
+  File.prototype.arrayBuffer = function (this: File): Promise<ArrayBuffer> {
+    // Return a zero-filled ArrayBuffer matching file size.
+    // This is sufficient for tests since storage upload is mocked.
+    return Promise.resolve(new ArrayBuffer(this.size));
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Mock state — resettable per test
 // ---------------------------------------------------------------------------
 
@@ -177,6 +189,14 @@ vi.mock("@/lib/supabase/server", () => ({
       storage: { from: mockStorageFrom },
     })
   ),
+}));
+
+const { mockStripExif } = vi.hoisted(() => ({
+  mockStripExif: vi.fn((input: Buffer) => Promise.resolve(input)),
+}));
+
+vi.mock("@/lib/media/strip-exif", () => ({
+  stripExif: mockStripExif,
 }));
 
 // ===========================================================================

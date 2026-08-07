@@ -20,7 +20,7 @@ import {
   releaseQuota,
   type RpcClient,
 } from "@/lib/ai/routes/quota-helpers";
-import type { DeepSeekTextProvider, SearchParseInput } from "@/lib/ai/types";
+import type { DeepSeekTextProvider, PropertySearchFilters, SearchParseInput } from "@/lib/ai/types";
 
 // ============================================================
 // Request Schema
@@ -224,7 +224,7 @@ export function createParsePropertySearchHandler(
         modelName: "deepseek-v4-flash",
       };
 
-      let filters;
+      let filters: PropertySearchFilters;
       try {
         filters = await provider.parsePropertySearch(providerInput);
       } catch (providerErr) {

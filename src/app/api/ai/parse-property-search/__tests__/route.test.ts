@@ -14,14 +14,16 @@ import type { DeepSeekTextProvider, SearchParseInput, PropertySearchFilters } fr
 // Hoisted Mocks (vi.mock factory cannot reference outer variables)
 // ============================================================
 
-const { mockGetUser, mockFromSingle, mockHasFeature } = vi.hoisted(() => {
+const { mockGetUser, mockFromSingle, mockHasFeature, mockRpc } = vi.hoisted(() => {
   const _mockGetUser = vi.fn();
   const _mockFromSingle = vi.fn();
   const _mockHasFeature = vi.fn();
+  const _mockRpc = vi.fn().mockResolvedValue({ data: { success: true, reservation_id: "res-test-1" }, error: null });
   return {
     mockGetUser: _mockGetUser,
     mockFromSingle: _mockFromSingle,
     mockHasFeature: _mockHasFeature,
+    mockRpc: _mockRpc,
   };
 });
 
@@ -49,7 +51,7 @@ function buildSupabaseClient() {
     client: {
       auth: { getUser: mockGetUser },
       from: () => buildQueryBuilder(),
-      rpc: () => Promise.resolve({ data: { success: true, reservation_id: "res-test-1" }, error: null }),
+      rpc: mockRpc,
     },
     jsonResponse: (body: unknown, init?: { status?: number; headers?: Record<string, string> }) =>
       new Response(JSON.stringify(body), {
@@ -174,6 +176,8 @@ describe("POST /api/ai/parse-property-search", () => {
     mockGetUser.mockReset();
     mockFromSingle.mockReset();
     mockHasFeature.mockReset();
+    mockRpc.mockReset();
+    mockRpc.mockResolvedValue({ data: { success: true, reservation_id: "res-test-1" }, error: null });
     setupAuth();
     setEntitlement(true);
   });
@@ -556,8 +560,8 @@ describe("POST /api/ai/parse-property-search", () => {
     expect(err.code).toBe("VALIDATION_FAILED");
   });
 
-  // 24. VALIDATION_FAILED envelope is correct
-  it("24: VALIDATION_FAILED envelope has correct shape", async () => {
+  // 25. VALIDATION_FAILED envelope is correct
+  it("25: VALIDATION_FAILED envelope has correct shape", async () => {
     const handler = createHandler();
     const res = await handler(makeRequest({ query: "" }));
     expect(res.status).toBe(422);
@@ -567,5 +571,99 @@ describe("POST /api/ai/parse-property-search", () => {
     expect(err.code).toBe("VALIDATION_FAILED");
     expect(typeof err.message).toBe("string");
     expect((err.message as string).length).toBeGreaterThan(0);
+  });
+
+  // 26. Quota reserve: RPC returns error → 429 QUOTA_CHECK_FAILED
+  it("26: quota reserve RPC error → 429 QUOTA_CHECK_FAILED", async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: "db error" } });
+    const handler = createHandler();
+    const res = await handler(makeRequest({ query: "test" }));
+    expect(res.status).toBe(429);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("QUOTA_CHECK_FAILED");
+    // Provider must NOT be called
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+  });
+
+  // 27. Quota reserve: success=false (quota exhausted) → 429 QUOTA_EXCEEDED
+  it("27: quota exhausted → 429 QUOTA_EXCEEDED", async () => {
+    mockRpc.mockResolvedValue({ data: { success: false }, error: null });
+    const handler = createHandler();
+    const res = await handler(makeRequest({ query: "test" }));
+    expect(res.status).toBe(429);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("QUOTA_EXCEEDED");
+  });
+
+  // 28. Quota reserve: success=false, cost_limit → 429 COST_LIMIT_EXCEEDED
+  it("28: cost limit exceeded → 429 COST_LIMIT_EXCEEDED", async () => {
+    mockRpc.mockResolvedValue({ data: { success: false, limit_reason: "cost_limit" }, error: null });
+    const handler = createHandler();
+    const res = await handler(makeRequest({ query: "test" }));
+    expect(res.status).toBe(429);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("COST_LIMIT_EXCEEDED");
+  });
+
+  // 29. Quota reserve: already_reserved → 409 CONFLICT
+  it("29: idempotency key conflict → 409 CONFLICT", async () => {
+    mockRpc.mockResolvedValue({ data: { success: true, already_reserved: true }, error: null });
+    const handler = createHandler();
+    const res = await handler(makeRequest({ query: "test" }));
+    expect(res.status).toBe(409);
+    const body = await getResponseBody(res);
+    const err = body.error as Record<string, unknown>;
+    expect(err.code).toBe("CONFLICT");
+  });
+
+  // 30. Quota settle called after successful provider call
+  it("30: settleQuota is called after successful Provider call", async () => {
+    let settleCalled = false;
+    mockRpc.mockImplementation(async (fn: string) => {
+      if (fn === "reserve_ai_quota") {
+        return { data: { success: true, reservation_id: "res-test-1" }, error: null };
+      }
+      if (fn === "settle_ai_quota") {
+        settleCalled = true;
+        return { data: { success: true }, error: null };
+      }
+      return { data: null, error: { message: "unknown rpc" } };
+    });
+    const handler = createHandler();
+    await handler(makeRequest({ query: "test" }));
+    expect(settleCalled).toBe(true);
+  });
+
+  // 31. Quota release called after Provider error
+  it("31: releaseQuota is called after Provider error", async () => {
+    let releaseCalled = false;
+    mockRpc.mockImplementation(async (fn: string) => {
+      if (fn === "reserve_ai_quota") {
+        return { data: { success: true, reservation_id: "res-test-1" }, error: null };
+      }
+      if (fn === "release_ai_quota") {
+        releaseCalled = true;
+        return { data: { success: true }, error: null };
+      }
+      return { data: null, error: { message: "unknown rpc" } };
+    });
+    // Provider that throws
+    const provider = makeMockProvider({
+      parsePropertySearch: async () => {
+        throw new DeepSeekProviderError({
+          code: "AI_UPSTREAM_ERROR",
+          message: "upstream error",
+          requestId: "req-1",
+          retryable: true,
+          suggestedHttpStatus: 502,
+        });
+      },
+    });
+    const handler = createHandler(provider);
+    await handler(makeRequest({ query: "test" }));
+    expect(releaseCalled).toBe(true);
   });
 });

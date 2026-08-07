@@ -75,6 +75,17 @@ export async function deleteAccountAction(): Promise<{
     return { error: "请先登录" };
   }
 
+  // Prevent double-deletion: check if profile is already deleted
+  const { data: existingProfile } = await supabase
+    .from("profiles")
+    .select("deleted_at")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (existingProfile?.deleted_at) {
+    return { error: "账号已删除" };
+  }
+
   // Soft-delete profile
   const { error: profileErr } = await supabase
     .from("profiles")
@@ -86,11 +97,23 @@ export async function deleteAccountAction(): Promise<{
   }
 
   // Deactivate all workspace memberships
-  await supabase
+  const { error: memberErr } = await supabase
     .from("workspace_members")
     .update({ status: "inactive" })
     .eq("user_id", user.id)
     .eq("status", "active");
+
+  if (memberErr) {
+    // Profile is soft-deleted but membership deactivation failed.
+    // Log the inconsistency for admin follow-up. Return success to
+    // the user — the account is still soft-deleted; dangling memberships
+    // are a recoverable state.
+    console.error(
+      "[deleteAccount] membership deactivation failed for user",
+      user.id,
+      memberErr,
+    );
+  }
 
   return { success: true };
 }

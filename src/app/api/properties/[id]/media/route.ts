@@ -339,14 +339,24 @@ export async function POST(
       const fileUuid = crypto.randomUUID();
       const storagePath = `${workspaceId}/${user.id}/${fileUuid}.${ext}`;
 
-      // d. Strip EXIF metadata (P1-001: GPS, camera info, etc.) before storage
-      let uploadBody: Buffer | File = file;
+      // d. Read file buffer and strip EXIF metadata (P1-001).
+      //    Both operations in one try/catch: if we can't read the file
+      //    or strip metadata, reject the upload — never pass raw files through.
+      let uploadBody: Buffer;
       try {
         const originalBuffer = Buffer.from(await file.arrayBuffer());
         uploadBody = await stripExif(originalBuffer, file.type);
       } catch (stripErr) {
-        // Fallback: upload original file if EXIF stripping fails
-        console.error("[media-upload] EXIF strip failed, using original:", stripErr);
+        console.error(
+          "[media-upload] file processing failed, rejecting upload:",
+          stripErr instanceof Error ? stripErr.message : String(stripErr),
+        );
+        rejections.push({
+          index: i,
+          code: "MEDIA_EXIF_STRIP_FAILED",
+          message: `文件 "${file.name}" 处理失败，请重新上传`,
+        });
+        continue;
       }
 
       // e. Upload to Supabase Storage
@@ -363,7 +373,7 @@ export async function POST(
         continue;
       }
 
-      // f. Insert property_media row
+      // g. Insert property_media row
       const { data: inserted, error: insertErr } = await client
         .from("property_media")
         .insert({
@@ -378,7 +388,7 @@ export async function POST(
         .single();
 
       if (insertErr || !inserted) {
-        // g. Compensation: delete storage object on DB failure
+        // h. Compensation: delete storage object on DB failure
         const { error: removeErr } = await serverClient.storage.from("property-private").remove([storagePath]);
         if (removeErr) {
           console.error("Media upload compensation failed for", storagePath, removeErr);

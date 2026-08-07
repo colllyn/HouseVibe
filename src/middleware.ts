@@ -11,12 +11,19 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Refresh session (validates with Supabase Auth, updates cookies)
-  const { response, user } = await updateSession(request);
+  const { response, user, deleted } = await updateSession(request);
   response.headers.set("Cache-Control", "private, no-store");
 
   if (isProtected(pathname)) {
     // Check actual validated user, not cookie length (P1-002)
-    if (!user) {
+    // Also block soft-deleted users from protected routes
+    if (!user || deleted) {
+      if (deleted) {
+        // Deleted users are signed out — redirect to login with a notice param
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("notice", "account_deleted");
+        return NextResponse.redirect(loginUrl);
+      }
       const loginUrl = new URL("/login", request.url);
       loginUrl.searchParams.set("next", pathname);
       return NextResponse.redirect(loginUrl);
