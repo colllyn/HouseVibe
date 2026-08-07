@@ -217,14 +217,13 @@ export async function tryRestorePrimary(
     // Reset circuit — report success
     await reportSuccess(supabase, capability);
 
-    // Audit log restoration — column names match audit_logs schema
-    await supabase.from("audit_logs").insert({
-      workspace_id: null,
-      actor_user_id: null,
-      action: "ai_circuit_restored",
-      entity_type: "ai_runtime_config",
-      entity_id: capability,
-      after_data: {
+    // Audit log restoration via SECURITY DEFINER RPC (P0-3 fix)
+    await supabase.rpc("write_audit_log", {
+      p_workspace_id: "00000000-0000-0000-0000-000000000000",
+      p_action: "ai_circuit_restored",
+      p_entity_type: "ai_runtime_config",
+      p_entity_id: capability,
+      p_after_data: {
         capability,
         reason: "health_check_passed",
       },

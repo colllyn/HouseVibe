@@ -104,20 +104,18 @@ export async function POST(
       );
     }
 
-    // 6. Audit log
-    await client.from("audit_logs").insert({
-      workspace_id: workspaceId,
-      user_id: user.id,
-      action: "property.shared",
-      resource_type: "property",
-      resource_id: id,
-      metadata: {
+    // 6. Audit log (via SECURITY DEFINER RPC — P0-3 fix)
+    await client.rpc("write_audit_log", {
+      p_workspace_id: workspaceId,
+      p_action: "property.shared",
+      p_entity_type: "property",
+      p_entity_id: id,
+      p_after_data: {
         shared_at: now,
         shared_expires_at: input.sharedExpiresAt ?? null,
         allow_marketing_reuse: input.allowMarketingReuse,
         commission_split: input.commissionSplit ?? null,
       },
-      created_at: now,
     });
 
     return jsonResponse(
@@ -205,15 +203,13 @@ export async function DELETE(
       );
     }
 
-    // 5. Audit log
-    await client.from("audit_logs").insert({
-      workspace_id: workspaceId,
-      user_id: user.id,
-      action: "property.unshared",
-      resource_type: "property",
-      resource_id: id,
-      metadata: { unshared_at: now },
-      created_at: now,
+    // 5. Audit log (via SECURITY DEFINER RPC — P0-3 fix)
+    await client.rpc("write_audit_log", {
+      p_workspace_id: workspaceId,
+      p_action: "property.unshared",
+      p_entity_type: "property",
+      p_entity_id: id,
+      p_after_data: { unshared_at: now },
     });
 
     return jsonResponse(

@@ -69,12 +69,12 @@ SELECT ok(
 );
 
 -- =============================================================================
--- Test 3: Regular user can SELECT active compliance terms
+-- Test 3: Regular user can NOT SELECT compliance terms (system-admin only)
 -- =============================================================================
 SELECT is(
   (SELECT count(*) FROM public.compliance_terms WHERE id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),
-  1::bigint,
-  '3: Regular user can see active compliance terms'
+  0::bigint,
+  '3: Regular user cannot see compliance terms (admin-only)'
 );
 
 -- =============================================================================
@@ -89,14 +89,19 @@ SELECT throws_ok(
 );
 
 -- =============================================================================
--- Test 5: Regular user's UPDATE is silently filtered by RLS
+-- Test 5: Regular user's UPDATE is silently filtered by RLS; verify via postgres
 -- =============================================================================
 UPDATE public.compliance_terms SET severity = 'review' WHERE id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+-- Regular user can't SELECT the row anymore, verify via RESET ROLE
+RESET ROLE;
 SELECT is(
   (SELECT severity::text FROM public.compliance_terms WHERE id = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'),
   'blocked',
   '5: Regular user UPDATE is silently filtered, term unchanged'
 );
+-- Switch back to regular user for remaining tests
+SET LOCAL ROLE authenticated;
+SET LOCAL "request.jwt.claims" TO '{"sub": "dddddddd-dddd-dddd-dddd-dddddddddddd", "role": "authenticated"}';
 
 -- =============================================================================
 -- Test 6: Anonymous user cannot SELECT
@@ -143,13 +148,13 @@ SELECT is(
   '8: Admin can SELECT own term through RLS'
 );
 
--- Test 9: Regular user can also see the active admin-created term
+-- Test 9: Regular user can NOT see admin-created terms (admin-only SELECT)
 SET LOCAL "request.jwt.claims" TO '{"sub": "dddddddd-dddd-dddd-dddd-dddddddddddd", "role": "authenticated"}';
 
 SELECT is(
   (SELECT count(*) FROM public.compliance_terms WHERE id = 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
-  1::bigint,
-  '9: Regular user can see admin-created active compliance term'
+  0::bigint,
+  '9: Regular user cannot see admin-created compliance term (admin-only)'
 );
 
 -- Test 10: Admin can DELETE as postgres (cleanup, RLS bypass verified by tests 1-2)

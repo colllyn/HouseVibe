@@ -16,6 +16,7 @@ import { NextRequest } from "next/server";
 let mockJsonResponse: ReturnType<typeof vi.fn>;
 let mockGetUser: ReturnType<typeof vi.fn>;
 let mockFrom: ReturnType<typeof vi.fn>;
+let mockRpc: ReturnType<typeof vi.fn>;
 let mockPendingCookies: { name: string; value: string; options: Record<string, unknown> }[];
 
 /** Build a Thenable mock Supabase query chain. */
@@ -77,6 +78,7 @@ function defaultFrom() {
 function resetMocks() {
   mockPendingCookies = [];
   mockGetUser = vi.fn();
+  mockRpc = vi.fn(() => Promise.resolve({ data: null, error: null }));
   mockJsonResponse = vi.fn(
     (body: unknown, init?: { status?: number; headers?: Record<string, string> }) => {
       const response = new Response(JSON.stringify(body), {
@@ -99,6 +101,7 @@ vi.mock("@/lib/supabase/route-handler", () => ({
       client: {
         auth: { getUser: mockGetUser },
         from: mockFrom,
+        rpc: mockRpc,
       },
       jsonResponse: mockJsonResponse,
     })
@@ -189,9 +192,6 @@ describe("POST /api/properties/[id]/share", () => {
       if (table === "workspace_members") {
         return makeChain({ single: () => Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }) });
       }
-      if (table === "audit_logs") {
-        return makeChain({ onInsert: () => {} });
-      }
       return makeChain({
         single: () => Promise.resolve({ data: { id: "prop-1", workspace_id: "ws-1" }, error: null }),
         onUpdate: (data: unknown) => { capturedUpdate = data as Record<string, unknown>; },
@@ -232,9 +232,6 @@ describe("POST /api/properties/[id]/share", () => {
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({ single: () => Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }) });
-      }
-      if (table === "audit_logs") {
-        return makeChain();
       }
       return makeChain({
         single: () => Promise.resolve({ data: { id: "prop-1", workspace_id: "ws-1" }, error: null }),
@@ -308,14 +305,13 @@ describe("POST /api/properties/[id]/share", () => {
     let auditLogged = false;
 
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    mockRpc = vi.fn((_fn: string, _args: unknown) => {
+      auditLogged = true;
+      return Promise.resolve({ data: null, error: null });
+    });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({ single: () => Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }) });
-      }
-      if (table === "audit_logs") {
-        return makeChain({
-          onInsert: () => { auditLogged = true; },
-        });
       }
       return makeChain({
         single: () => Promise.resolve({ data: { id: "prop-1", workspace_id: "ws-1" }, error: null }),
@@ -431,9 +427,6 @@ describe("DELETE /api/properties/[id]/share", () => {
       if (table === "workspace_members") {
         return makeChain({ single: () => Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }) });
       }
-      if (table === "audit_logs") {
-        return makeChain();
-      }
       return makeChain({
         single: () => Promise.resolve({ data: { id: "prop-1", workspace_id: "ws-1" }, error: null }),
         onUpdate: (data: unknown) => { capturedUpdate = data as Record<string, unknown>; },
@@ -481,14 +474,13 @@ describe("DELETE /api/properties/[id]/share", () => {
     let auditLogged = false;
 
     mockGetUser.mockResolvedValue({ data: { user: { id: "u1" } }, error: null });
+    mockRpc = vi.fn((_fn: string, _args: unknown) => {
+      auditLogged = true;
+      return Promise.resolve({ data: null, error: null });
+    });
     mockFrom = vi.fn((table: string) => {
       if (table === "workspace_members") {
         return makeChain({ single: () => Promise.resolve({ data: { workspace_id: "ws-1" }, error: null }) });
-      }
-      if (table === "audit_logs") {
-        return makeChain({
-          onInsert: () => { auditLogged = true; },
-        });
       }
       return makeChain({
         single: () => Promise.resolve({ data: { id: "prop-1", workspace_id: "ws-1" }, error: null }),
