@@ -39,17 +39,10 @@ const EXTRACTION_TO_FORM_NAME: Record<string, string> = {
   bathrooms: "bathrooms",
   areaSqm: "area_sqm",
   floor: "floor",
-  orientation: "orientation",
-  decoration: "decoration",
   availableFrom: "available_from",
-  minimumLeaseMonths: "minimum_lease_months",
   hasElevator: "has_elevator",
   petsAllowed: "pets_allowed",
   cookingAllowed: "cooking_allowed",
-  subwayText: "subway_text",
-  tags: "tags",
-  sellingPoints: "selling_points",
-  description: "description",
 };
 
 const SENSITIVE_KEYS = new Set([
@@ -161,32 +154,8 @@ describe("extraction → form field mapping", () => {
     expect(EXTRACTION_TO_FORM_NAME["cookingAllowed"]).toBe("cooking_allowed");
   });
 
-  it("tags maps to tags (array field)", () => {
-    expect(EXTRACTION_TO_FORM_NAME["tags"]).toBe("tags");
-  });
-
-  it("sellingPoints maps to selling_points", () => {
-    expect(EXTRACTION_TO_FORM_NAME["sellingPoints"]).toBe("selling_points");
-  });
-
-  it("subwayText maps to subway_text", () => {
-    expect(EXTRACTION_TO_FORM_NAME["subwayText"]).toBe("subway_text");
-  });
-
-  it("minimumLeaseMonths maps to minimum_lease_months", () => {
-    expect(EXTRACTION_TO_FORM_NAME["minimumLeaseMonths"]).toBe("minimum_lease_months");
-  });
-
   it("floor maps to floor", () => {
     expect(EXTRACTION_TO_FORM_NAME["floor"]).toBe("floor");
-  });
-
-  it("orientation maps to orientation", () => {
-    expect(EXTRACTION_TO_FORM_NAME["orientation"]).toBe("orientation");
-  });
-
-  it("decoration maps to decoration", () => {
-    expect(EXTRACTION_TO_FORM_NAME["decoration"]).toBe("decoration");
   });
 
   it("unknown AI keys have no form mapping (safely ignored)", () => {

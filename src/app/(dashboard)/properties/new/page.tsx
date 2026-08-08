@@ -57,17 +57,10 @@ const EXTRACTION_FIELD_DEFS: FieldDef[] = [
   { key: "bathrooms", label: "卫生间数" },
   { key: "areaSqm", label: "面积" },
   { key: "floor", label: "楼层" },
-  { key: "orientation", label: "朝向" },
-  { key: "decoration", label: "装修" },
   { key: "availableFrom", label: "可入住时间" },
-  { key: "minimumLeaseMonths", label: "最短租期(月)" },
   { key: "hasElevator", label: "有电梯" },
   { key: "petsAllowed", label: "可养宠物" },
   { key: "cookingAllowed", label: "可做饭" },
-  { key: "subwayText", label: "地铁信息" },
-  { key: "tags", label: "标签" },
-  { key: "sellingPoints", label: "卖点" },
-  { key: "description", label: "描述" },
 ];
 
 // ============================================================
@@ -90,17 +83,10 @@ const EXTRACTION_TO_FORM_NAME: Record<string, string> = {
   bathrooms: "bathrooms",
   areaSqm: "area_sqm",
   floor: "floor",
-  orientation: "orientation",
-  decoration: "decoration",
   availableFrom: "available_from",
-  minimumLeaseMonths: "minimum_lease_months",
   hasElevator: "has_elevator",
   petsAllowed: "pets_allowed",
   cookingAllowed: "cooking_allowed",
-  subwayText: "subway_text",
-  tags: "tags",
-  sellingPoints: "selling_points",
-  description: "description",
 };
 
 const SENSITIVE_KEYS = new Set([
@@ -283,7 +269,7 @@ export default function NewPropertyPage() {
   return (
     <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-2xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
-        <Link href="/properties" className="inline-flex items-center justify-center rounded-md h-10 w-10 hover:bg-muted"><ArrowLeft className="h-5 w-5" /></Link>
+        <Link href="/properties" className="inline-flex items-center justify-center rounded-md h-11 w-11 hover:bg-muted"><ArrowLeft className="h-5 w-5" /></Link>
         <div><h1 className="text-xl font-bold">录入房源</h1></div>
       </div>
       <form onSubmit={handleCreate} className="space-y-6">
