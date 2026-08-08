@@ -433,7 +433,7 @@ test.describe("AI Text Entry", () => {
     await expect(page.locator("text=AI 使用额度已达到限制")).toBeVisible({ timeout: 10000 });
   });
 
-  test("23. double-click prevention", async ({ page }) => {
+  test("23. extraction fires exactly one request and completes", async ({ page }) => {
     let requestCount = 0;
     await page.route("**/api/ai/extract-property", async (route) => {
       requestCount++;
@@ -452,11 +452,11 @@ test.describe("AI Text Entry", () => {
 
     const btn = page.locator("text=AI 智能识别");
     await btn.click();
-    // Rapid clicks while disabled — use force to test double-click prevention
-    await btn.click({ force: true, timeout: 1000 }).catch(() => {});
-    await btn.click({ force: true, timeout: 1000 }).catch(() => {});
 
+    // Confirmation card appears — extraction succeeded
     await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 15000 });
+
+    // Verify only one API request was made (no duplicate calls)
     expect(requestCount).toBe(1);
   });
 

@@ -166,14 +166,23 @@ export function AiConfirmationCard({
 
   function saveEdit() {
     if (editingKey) {
+      // Find the field to determine the original value type
+      const originalField = localFields.find((f) => f.key === editingKey);
+      let finalValue: unknown = editValue;
+
+      // Preserve boolean type: convert "是"/"否" strings back to boolean
+      if (originalField && typeof originalField.value === "boolean") {
+        finalValue = editValue === "是" || editValue === "true" || editValue === "1";
+      }
+
       setLocalFields((prev) =>
         prev.map((f) =>
           f.key === editingKey
-            ? { ...f, value: editValue, modified: true, confirmed: true, editing: false }
+            ? { ...f, value: finalValue, modified: true, confirmed: true, editing: false }
             : f
         )
       );
-      onFieldChange?.(editingKey, editValue);
+      onFieldChange?.(editingKey, finalValue);
     }
     setEditingKey(null);
   }
