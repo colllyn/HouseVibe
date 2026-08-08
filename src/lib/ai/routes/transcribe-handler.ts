@@ -18,7 +18,7 @@ import {
 } from "@/lib/ai/providers/transcription-provider";
 
 // ============================================================
-// Constants — derived from env at module load (runtime-adjustable via restart)
+// Constants
 // ============================================================
 
 const ALLOWED_MIME_TYPES = [
@@ -29,9 +29,14 @@ const ALLOWED_MIME_TYPES = [
   "audio/x-m4a",
 ] as const;
 
-const _env = getServerEnv();
-const MAX_FILE_BYTES = _env.MAX_AUDIO_UPLOAD_BYTES;
-const MAX_AUDIO_DURATION_SECONDS = _env.MAX_AUDIO_DURATION_SECONDS;
+/** Lazily resolve env-dependent limits at request time so builds don't fail. */
+function getAudioLimits() {
+  const env = getServerEnv();
+  return {
+    maxFileBytes: env.MAX_AUDIO_UPLOAD_BYTES,
+    maxDurationSeconds: env.MAX_AUDIO_DURATION_SECONDS,
+  };
+}
 
 // ============================================================
 // Helpers
@@ -156,13 +161,14 @@ export function createTranscribeHandler(
       }
 
       // 6. Validate file size
-      if (audioFile.size > MAX_FILE_BYTES) {
+      const { maxFileBytes, maxDurationSeconds } = getAudioLimits();
+      if (audioFile.size > maxFileBytes) {
         return jsonResponse(
           {
             data: null,
             error: {
               code: "TRANSCRIPTION_TOO_LARGE",
-              message: `音频文件不能超过 ${MAX_FILE_BYTES / (1024 * 1024)} MB`,
+              message: `音频文件不能超过 ${maxFileBytes / (1024 * 1024)} MB`,
             },
           },
           { status: 413, headers: h }
@@ -235,7 +241,7 @@ export function createTranscribeHandler(
         const duration = z.coerce
           .number()
           .min(0)
-          .max(MAX_AUDIO_DURATION_SECONDS)
+          .max(maxDurationSeconds)
           .safeParse(durationRaw);
         if (!duration.success) {
           return jsonResponse(
@@ -243,7 +249,7 @@ export function createTranscribeHandler(
               data: null,
               error: {
                 code: "TRANSCRIPTION_DURATION_EXCEEDED",
-                message: `录音时长不能超过 ${MAX_AUDIO_DURATION_SECONDS} 秒`,
+                message: `录音时长不能超过 ${maxDurationSeconds} 秒`,
               },
             },
             { status: 422, headers: h }
@@ -292,7 +298,7 @@ export function createTranscribeHandler(
                 data: null,
                 error: {
                   code: "TRANSCRIPTION_DURATION_EXCEEDED",
-                  message: `录音时长不能超过 ${MAX_AUDIO_DURATION_SECONDS} 秒`,
+                  message: `录音时长不能超过 ${maxDurationSeconds} 秒`,
                 },
               },
               { status: 422, headers: h }
@@ -303,7 +309,7 @@ export function createTranscribeHandler(
                 data: null,
                 error: {
                   code: "TRANSCRIPTION_TOO_LARGE",
-                  message: `音频文件不能超过 ${MAX_FILE_BYTES / (1024 * 1024)} MB`,
+                  message: `音频文件不能超过 ${maxFileBytes / (1024 * 1024)} MB`,
                 },
               },
               { status: 413, headers: h }

@@ -54,6 +54,11 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+          NEXT_PUBLIC_APP_URL: http://localhost:3000
+          INVITE_TOKEN_SECRET: ci-placeholder-invite-token-secret-at-least-32-chars
 
   # ===========================================================================
   # Database checks: supabase db lint + test db
