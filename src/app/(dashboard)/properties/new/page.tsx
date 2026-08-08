@@ -8,6 +8,13 @@ import {
   AiConfirmationCard,
   type ExtractionField,
 } from "@/components/ui/ai-confirmation-card";
+import {
+  mapExtractionToFormValues,
+  generateTitle,
+  detectMissingRequiredFields,
+  getRequiredFieldMessage,
+  getAiMissingFieldMessage,
+} from "@/features/properties/ai-extraction-mapper";
 
 const inputCls = (e?: boolean) => cn(
   "w-full rounded-md border bg-background px-3 py-2.5 text-sm min-h-[44px]",
@@ -63,32 +70,6 @@ const EXTRACTION_FIELD_DEFS: FieldDef[] = [
   { key: "cookingAllowed", label: "可做饭" },
 ];
 
-// ============================================================
-// Explicit mapper: Extraction result → form field names
-// Only maps fields supported by CreatePropertyInputSchema.
-// ============================================================
-
-const EXTRACTION_TO_FORM_NAME: Record<string, string> = {
-  title: "title",
-  city: "city",
-  district: "district",
-  businessArea: "business_area",
-  communityName: "community_name",
-  addressText: "address_text",
-  rentalType: "rental_type",
-  monthlyRent: "monthly_rent",
-  depositTerms: "deposit_terms",
-  bedrooms: "bedrooms",
-  livingRooms: "living_rooms",
-  bathrooms: "bathrooms",
-  areaSqm: "area_sqm",
-  floor: "floor",
-  availableFrom: "available_from",
-  hasElevator: "has_elevator",
-  petsAllowed: "pets_allowed",
-  cookingAllowed: "cooking_allowed",
-};
-
 const SENSITIVE_KEYS = new Set([
   "ownerName", "ownerPhone", "exactAddress", "keyLocation",
 ]);
@@ -97,11 +78,13 @@ export default function NewPropertyPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [showPrivate, setShowPrivate] = React.useState(false);
+  const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
 
   // AI text input
   const [aiText, setAiText] = React.useState("");
   const [aiExtracting, setAiExtracting] = React.useState(false);
   const [aiSuccess, setAiSuccess] = React.useState(false);
+  const [aiHadCity, setAiHadCity] = React.useState(false);
 
   // AI confirmation
   const [confirmFields, setConfirmFields] = React.useState<ExtractionField[] | null>(null);
@@ -147,6 +130,7 @@ export default function NewPropertyPage() {
       const extraction = result.data?.extraction;
       if (extraction) {
         const { data: facts, missingFields, uncertainFields } = extraction;
+        const factsObj = facts as Record<string, unknown>;
         const uncertainKeys = new Set(
           (uncertainFields as Array<{ field: string; reason: string }>)?.map(
             (u) => u.field
@@ -154,23 +138,43 @@ export default function NewPropertyPage() {
         );
         const missingKeys = new Set<string>(missingFields ?? []);
 
+        // --- 1. Auto-fill form immediately (don't wait for confirm) ---
+        const formValues = mapExtractionToFormValues(factsObj);
+
+        // Generate deterministic title if AI didn't provide one
+        if (!formValues["title"]) {
+          const generatedTitle = generateTitle(factsObj);
+          if (generatedTitle) {
+            formValues["title"] = generatedTitle;
+          }
+        }
+
+        applyValuesToForm(formValues);
+
+        // Track if AI provided city (for later error messages)
+        const hadCity = typeof factsObj["city"] === "string" && factsObj["city"].trim().length > 0;
+        setAiHadCity(hadCity);
+
+        // --- 2. Build confirmation fields for review ---
         const fields: ExtractionField[] = EXTRACTION_FIELD_DEFS.map((def) => {
-          const val = (facts as Record<string, unknown>)[def.key];
+          const val = factsObj[def.key];
           const isMissing = missingKeys.has(def.key) || (val === null || val === undefined || val === "");
-          const isUncertain = uncertainKeys.has(def.key);
+
+          // For title: if we generated one, show it as modified
+          const isTitleGenerated = def.key === "title" && !factsObj["title"] && formValues["title"];
 
           return {
             key: def.key,
             label: def.label,
-            value: val ?? "",
-            confirmed: !isMissing && !isUncertain,
-            modified: false,
-            uncertain: isUncertain,
+            value: isTitleGenerated ? formValues["title"] : (val ?? ""),
+            confirmed: !isMissing || !!isTitleGenerated,
+            modified: !!isTitleGenerated,
+            uncertain: uncertainKeys.has(def.key) && !isTitleGenerated,
             uncertainReason: (uncertainFields as Array<{ field: string; reason: string }>)?.find(
               (u) => u.field === def.key
             )?.reason,
-            missing: isMissing,
-            source: "AI 提取",
+            missing: isMissing && !isTitleGenerated,
+            source: isTitleGenerated ? "自动生成" : "AI 提取",
             sensitive: SENSITIVE_KEYS.has(def.key),
           };
         });
@@ -181,6 +185,8 @@ export default function NewPropertyPage() {
           uncertainFields: uncertainFields ?? [],
         });
         setAiSuccess(true);
+        // Clear any prior field errors
+        setFieldErrors({});
       }
     } catch {
       setError("AI 识别失败，请检查网络后重试");
@@ -198,35 +204,16 @@ export default function NewPropertyPage() {
   };
 
   // ==========================================================
-  // Apply confirmed fields to form
+  // Apply user modifications back to form
   // ==========================================================
 
-  const handleConfirmFields = (confirmedValues: Record<string, unknown>) => {
+  const handleApplyModifications = (modifiedValues: Record<string, unknown>) => {
     setConfirming(true);
-    const form = document.querySelector("form");
-    if (!form) { setConfirming(false); return; }
-
-    for (const [key, value] of Object.entries(confirmedValues)) {
-      const formName = EXTRACTION_TO_FORM_NAME[key];
-      if (!formName) continue; // Ignore unknown fields
-
-      if (typeof value === "boolean") {
-        const el = form.elements.namedItem(formName) as HTMLInputElement | null;
-        if (el) el.checked = value;
-      } else if (Array.isArray(value)) {
-        const el = form.elements.namedItem(formName) as HTMLInputElement | null;
-        if (el) el.value = value.join(", ");
-      } else if (value !== null && value !== undefined && value !== "") {
-        const el = form.elements.namedItem(formName) as HTMLInputElement | HTMLSelectElement | null;
-        if (el) el.value = String(value);
-      }
-    }
-
-    setConfirmFields(null);
-    setAiText("");
-    setExtractionMeta(null);
-    setAiSuccess(false);
+    // Re-map modified values through the same explicit mapper
+    const formValues = mapExtractionToFormValues(modifiedValues);
+    applyValuesToForm(formValues);
     setConfirming(false);
+    setFieldErrors({});
   };
 
   const handleDismissExtraction = () => {
@@ -236,20 +223,75 @@ export default function NewPropertyPage() {
   };
 
   // ==========================================================
-  // Create property (unchanged)
+  // Apply form values to DOM (shared by auto-fill and modifications)
+  // ==========================================================
+
+  const applyValuesToForm = (values: Record<string, unknown>) => {
+    const form = document.querySelector('form[data-form="property-create"]') as HTMLFormElement | null;
+    if (!form) return;
+
+    for (const [formName, value] of Object.entries(values)) {
+      if (typeof value === "boolean") {
+        const el = form.elements.namedItem(formName) as HTMLInputElement | null;
+        if (el) el.checked = value;
+      } else if (value !== null && value !== undefined && value !== "") {
+        const el = form.elements.namedItem(formName) as HTMLInputElement | HTMLSelectElement | null;
+        if (el) el.value = String(value);
+      }
+    }
+  };
+
+  // ==========================================================
+  // Read current form values (for validation before submit)
+  // ==========================================================
+
+  // ==========================================================
+  // Create property (with pre-submit validation)
   // ==========================================================
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setLoading(true);
-    setError(null);
-    const fd = new FormData(e.currentTarget);
+    const form = e.currentTarget;
+
+    // --- Collect form values ---
+    const fd = new FormData(form);
     const data: Record<string, unknown> = {};
     fd.forEach((v, k) => { if (v !== "") data[k] = v; });
     for (const bk of ["has_elevator", "pets_allowed", "cooking_allowed"]) {
       data[bk] = fd.has(bk);
     }
     if (!data.rental_type) data.rental_type = "whole_unit";
+
+    // --- Validate required fields ---
+    const missing = detectMissingRequiredFields(data);
+    if (missing.length > 0) {
+      const errors: Record<string, string> = {};
+      for (const key of missing) {
+        // Use AI-specific message for city when AI didn't provide it
+        if (key === "city" && !aiHadCity) {
+          errors[key] = getAiMissingFieldMessage(key, false) ?? "请输入城市";
+        } else {
+          errors[key] = getRequiredFieldMessage(key) ?? `请输入${key}`;
+        }
+      }
+      setFieldErrors(errors);
+      setError(null);
+
+      // Auto-scroll to first missing required field
+      const firstKey = missing[0];
+      if (firstKey) {
+        const firstEl = form.elements.namedItem(firstKey) as HTMLElement | null;
+        if (firstEl) {
+          firstEl.scrollIntoView({ behavior: "smooth", block: "center" });
+          firstEl.focus();
+        }
+      }
+      return;
+    }
+
+    setFieldErrors({});
+    setLoading(true);
+    setError(null);
 
     try {
       const resp = await fetch("/api/properties", {
@@ -272,7 +314,7 @@ export default function NewPropertyPage() {
         <Link href="/properties" className="inline-flex items-center justify-center rounded-md h-11 w-11 hover:bg-muted"><ArrowLeft className="h-5 w-5" /></Link>
         <div><h1 className="text-xl font-bold">录入房源</h1></div>
       </div>
-      <form onSubmit={handleCreate} className="space-y-6">
+      <form onSubmit={handleCreate} data-form="property-create" noValidate className="space-y-6">
         {/* AI Smart Input Section */}
         <section className="space-y-3 rounded-lg border p-4">
           <h2 className="font-semibold text-sm flex items-center gap-2">
@@ -332,23 +374,29 @@ export default function NewPropertyPage() {
               </button>
               {aiSuccess && !aiExtracting && (
                 <p className="text-xs text-green-600 flex items-center gap-1">
-                  <Sparkles className="h-3 w-3" />识别完成，请在下方确认结果
+                  <Sparkles className="h-3 w-3" />识别完成，结果已自动填入表单
                 </p>
               )}
             </div>
           )}
 
-          {/* Confirmation Card */}
+          {/* Confirmation Card (review/inspect after auto-fill) */}
           {confirmFields && (
             <AiConfirmationCard
               fields={confirmFields}
-              onConfirm={handleConfirmFields}
+              onConfirm={handleApplyModifications}
               onDismiss={handleDismissExtraction}
+              onFieldChange={(key, value) => {
+                // Immediately sync field edit to real form
+                const formValues = mapExtractionToFormValues({ [key]: value });
+                applyValuesToForm(formValues);
+              }}
               confirming={confirming}
+              autoFilled={true}
               statusMessage={
                 extractionMeta?.uncertainFields.length
-                  ? `AI 提取完成，${extractionMeta.uncertainFields.length} 个字段需确认`
-                  : "AI 提取完成，请确认后填充表单"
+                  ? `AI 识别完成，${extractionMeta.uncertainFields.length} 个字段需关注，其余已自动填入表单`
+                  : "AI 识别完成，结果已自动填入表单"
               }
             />
           )}
@@ -357,15 +405,35 @@ export default function NewPropertyPage() {
         {/* Basic Info */}
         <section className="space-y-4 rounded-lg border p-4">
           <h2 className="font-semibold text-sm">基本信息</h2>
-          <div className="space-y-1.5"><label className="text-sm font-medium">房源标题 *</label><input name="title" required className={inputCls()} placeholder="例如：阳光花园精装两居室" /></div>
-          <div className="space-y-1.5"><label className="text-sm font-medium">城市 *</label><input name="city" required className={inputCls()} placeholder="例如：北京" /></div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">房源标题 *</label>
+            <input name="title" required data-required="true" className={inputCls(!!fieldErrors["title"])} placeholder="例如：阳光花园精装两居室" />
+            {fieldErrors["title"] && (
+              <p className="text-xs text-destructive">{fieldErrors["title"]}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">城市 *</label>
+            <input name="city" required data-required="true" className={inputCls(!!fieldErrors["city"])} placeholder="例如：北京" />
+            {fieldErrors["city"] && (
+              <p className="text-xs text-destructive">{fieldErrors["city"]}</p>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5"><label className="text-sm font-medium">区域</label><input name="district" className={inputCls()} placeholder="朝阳区" /></div>
             <div className="space-y-1.5"><label className="text-sm font-medium">商圈</label><input name="business_area" className={inputCls()} placeholder="三里屯" /></div>
           </div>
           <div className="space-y-1.5"><label className="text-sm font-medium">小区</label><input name="community_name" className={inputCls()} placeholder="阳光花园" /></div>
           <div className="space-y-1.5"><label className="text-sm font-medium">地址</label><input name="address_text" className={inputCls()} placeholder="大致地址" /></div>
-          <div className="space-y-1.5"><label className="text-sm font-medium">租赁方式 *</label><select name="rental_type" defaultValue="whole_unit" className={inputCls()}><option value="whole_unit">整租</option><option value="shared">合租</option></select></div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">租赁方式 *</label>
+            <select name="rental_type" defaultValue="whole_unit" data-required="true" className={inputCls(!!fieldErrors["rental_type"])}>
+              <option value="whole_unit">整租</option><option value="shared">合租</option>
+            </select>
+            {fieldErrors["rental_type"] && (
+              <p className="text-xs text-destructive">{fieldErrors["rental_type"]}</p>
+            )}
+          </div>
         </section>
 
         {/* Rent & Specs */}

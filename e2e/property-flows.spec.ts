@@ -268,6 +268,57 @@ const MOCK_EXTRACTION = {
   },
 };
 
+const MOCK_EXTRACTION_FULL = {
+  data: {
+    extraction: {
+      data: {
+        city: "北京",
+        district: "朝阳区",
+        businessArea: "三里屯",
+        communityName: "阳光花园",
+        monthlyRent: 3000,
+        depositTerms: "押一付三",
+        bedrooms: 2,
+        livingRooms: 1,
+        hasElevator: true,
+      },
+      missingFields: [],
+      uncertainFields: [],
+      rawText: "北京朝阳区三里屯阳光花园，两室一厅，月租3000，押一付三，有电梯",
+    },
+    error: null,
+  },
+};
+
+const MOCK_EXTRACTION_NO_CITY = {
+  data: {
+    extraction: {
+      data: {
+        district: "朝阳区",
+        monthlyRent: 3000,
+        bedrooms: 2,
+        livingRooms: 1,
+      },
+      missingFields: ["title", "city"],
+      uncertainFields: [],
+      rawText: "朝阳区两室一厅，月租3000",
+    },
+    error: null,
+  },
+};
+
+const MOCK_EXTRACTION_PARTIAL = {
+  data: {
+    extraction: {
+      data: { bedrooms: 2, monthlyRent: 3000 },
+      missingFields: ["title", "city", "areaSqm", "district", "communityName", "rentalType"],
+      uncertainFields: [],
+      rawText: "两室，3000元",
+    },
+    error: null,
+  },
+};
+
 test.describe("AI Text Entry", () => {
   test("18. AI smart input section renders on property creation page", async ({ page }) => {
     await page.goto("/properties/new");
@@ -284,7 +335,7 @@ test.describe("AI Text Entry", () => {
     await expect(page.locator("text=点击开始录音")).not.toBeVisible();
   });
 
-  test("19. AI text entry full flow", async ({ page }) => {
+  test("19. AI text entry auto-fills form immediately (no confirm button needed)", async ({ page }) => {
     await page.route("**/api/ai/extract-property", async (route) => {
       await route.fulfill({
         status: 200,
@@ -300,21 +351,22 @@ test.describe("AI Text Entry", () => {
     await textarea.fill("万科城二期，南山科技园附近，3室2厅，89平，朝南，月租6500，押二付一，有电梯，精装修");
 
     await page.click("text=AI 智能识别");
-    await expect(page.locator("text=AI 提取结果确认")).toBeVisible({ timeout: 15000 });
 
-    // Verify extracted fields visible
-    await expect(page.locator("text=万科城二期")).toBeVisible();
-    await expect(page.locator("text=南山区")).toBeVisible();
+    // Confirmation card shows "AI 识别结果检查" (review mode after auto-fill)
+    await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 15000 });
 
-    // Confirm and fill
-    await page.click("text=确认并填充");
+    // Verify "识别结果已填入" button is visible (status indicator, not action button)
+    await expect(page.locator("text=识别结果已填入")).toBeVisible({ timeout: 5000 });
 
-    // Verify form populated
+    // Verify form populated automatically — NO manual confirm needed
     await expect(page.locator('input[name="title"]')).toHaveValue("万科城二期");
     await expect(page.locator('input[name="city"]')).toHaveValue("深圳");
     await expect(page.locator('input[name="district"]')).toHaveValue("南山区");
     await expect(page.locator('input[name="community_name"]')).toHaveValue("万科城");
     await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("6500");
+    await expect(page.locator('input[name="bedrooms"]')).toHaveValue("3");
+    await expect(page.locator('input[name="living_rooms"]')).toHaveValue("2");
+    await expect(page.locator('input[name="has_elevator"]')).toBeChecked();
 
     // Save
     await page.click('[data-testid="property-create-submit"]');
@@ -322,11 +374,19 @@ test.describe("AI Text Entry", () => {
     await expect(page.locator("h1")).toContainText("万科城二期");
   });
 
-  test("20. empty input shows validation error", async ({ page }) => {
+
+  test("20. empty input button disabled and enabled states", async ({ page }) => {
     await page.goto("/properties/new");
     await page.waitForLoadState("networkidle");
-    await page.click("text=AI 智能识别");
-    await expect(page.locator("text=请输入房源描述文字")).toBeVisible({ timeout: 5000 });
+
+    // Button disabled when textarea is empty
+    const btn = page.locator("text=AI 智能识别");
+    await expect(btn).toBeDisabled();
+
+    // Fill text, button becomes enabled
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("test text");
+    await expect(btn).toBeEnabled();
   });
 
   test("21. API failure shows user-friendly error", async ({ page }) => {
@@ -392,29 +452,20 @@ test.describe("AI Text Entry", () => {
 
     const btn = page.locator("text=AI 智能识别");
     await btn.click();
-    await btn.click();
-    await btn.click();
+    // Rapid clicks while disabled — use force to test double-click prevention
+    await btn.click({ force: true, timeout: 1000 }).catch(() => {});
+    await btn.click({ force: true, timeout: 1000 }).catch(() => {});
 
-    await expect(page.locator("text=AI 提取结果确认")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 15000 });
     expect(requestCount).toBe(1);
   });
 
-  test("24. partial fields missing", async ({ page }) => {
+  test("24. partial fields auto-filled, missing required shows validation on submit", async ({ page }) => {
     await page.route("**/api/ai/extract-property", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({
-          data: {
-            extraction: {
-              data: { bedrooms: 2, monthlyRent: 6500 },
-              missingFields: ["title", "city", "areaSqm", "district", "communityName"],
-              uncertainFields: [],
-              rawText: "test",
-            },
-            error: null,
-          },
-        }),
+        body: JSON.stringify(MOCK_EXTRACTION_PARTIAL),
       });
     });
 
@@ -425,14 +476,22 @@ test.describe("AI Text Entry", () => {
     await textarea.fill("test");
     await page.click("text=AI 智能识别");
 
-    await expect(page.locator("text=AI 提取结果确认")).toBeVisible({ timeout: 10000 });
-    await page.click("text=确认并填充");
+    await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 10000 });
 
+    // Auto-filled immediately
     await expect(page.locator('input[name="bedrooms"]')).toHaveValue("2");
-    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("6500");
+    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("3000");
+
+    // Missing fields are empty (not auto-filled with fabricated values)
     await expect(page.locator('input[name="title"]')).toHaveValue("");
     await expect(page.locator('input[name="city"]')).toHaveValue("");
     await expect(page.locator('input[name="area_sqm"]')).toHaveValue("");
+
+    // Try to create — should show validation errors
+    await page.waitForTimeout(300);
+    await page.click('[data-testid="property-create-submit"]');
+    // Should show validation error for required fields
+    await expect(page.locator("text=请输入")).toBeVisible({ timeout: 5000 });
   });
 
   test("25. mobile 375px no horizontal scroll", async ({ page }) => {
@@ -447,7 +506,7 @@ test.describe("AI Text Entry", () => {
     expect(sw).toBeLessThanOrEqual(cw + 10);
   });
 
-  test("26. dismiss clears confirmation card", async ({ page }) => {
+  test("26. dismiss clears confirmation card but form keeps auto-filled values", async ({ page }) => {
     await page.route("**/api/ai/extract-property", async (route) => {
       await route.fulfill({
         status: 200,
@@ -463,10 +522,185 @@ test.describe("AI Text Entry", () => {
     await textarea.fill("test");
     await page.click("text=AI 智能识别");
 
-    await expect(page.locator("text=AI 提取结果确认")).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 10000 });
+
+    // Verify form was auto-filled
+    await expect(page.locator('input[name="title"]')).toHaveValue("万科城二期");
+
+    // Dismiss
     await page.click("text=忽略，手动填写");
 
-    await expect(page.locator("text=AI 提取结果确认")).not.toBeVisible();
+    await expect(page.locator("text=AI 识别结果检查")).not.toBeVisible();
     await expect(page.locator("text=AI 智能识别")).toBeVisible();
+
+    // Form values persist after dismiss (auto-filled values remain)
+    await expect(page.locator('input[name="title"]')).toHaveValue("万科城二期");
+    await expect(page.locator('input[name="city"]')).toHaveValue("深圳");
+  });
+
+  // ============================================================
+  // New E2E cases for auto-fill behavior
+  // ============================================================
+
+  test("27. complete description auto-fill with deterministic title generation", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_EXTRACTION_FULL),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("北京朝阳区三里屯阳光花园，两室一厅，月租3000，押一付三，有电梯");
+    await page.click("text=AI 智能识别");
+
+    await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator("text=识别结果已填入")).toBeVisible({ timeout: 5000 });
+
+    // Verify auto-filled fields
+    await expect(page.locator('input[name="city"]')).toHaveValue("北京");
+    await expect(page.locator('input[name="district"]')).toHaveValue("朝阳区");
+    await expect(page.locator('input[name="business_area"]')).toHaveValue("三里屯");
+    await expect(page.locator('input[name="community_name"]')).toHaveValue("阳光花园");
+    await expect(page.locator('input[name="bedrooms"]')).toHaveValue("2");
+    await expect(page.locator('input[name="living_rooms"]')).toHaveValue("1");
+    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("3000");
+    await expect(page.locator('input[name="deposit_terms"]')).toHaveValue("押一付三");
+    await expect(page.locator('input[name="has_elevator"]')).toBeChecked();
+
+    // Title auto-generated: communityName + bedrooms + livingRooms
+    await expect(page.locator('input[name="title"]')).toHaveValue("阳光花园两室一厅出租");
+
+    // Create succeeds
+    await page.click('[data-testid="property-create-submit"]');
+    await page.waitForURL(/\/properties\/[a-f0-9-]+/, { timeout: 15000 });
+    await expect(page.locator("h1")).toContainText("阳光花园两室一厅出租");
+  });
+
+  test("28. missing city shows validation error and allows manual fix", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_EXTRACTION_NO_CITY),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("朝阳区两室一厅，月租3000");
+    await page.click("text=AI 智能识别");
+
+    await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 15000 });
+
+    // Other fields auto-filled
+    await expect(page.locator('input[name="district"]')).toHaveValue("朝阳区");
+    await expect(page.locator('input[name="bedrooms"]')).toHaveValue("2");
+    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("3000");
+
+    // City remains empty (AI didn't recognize it from ambiguous district)
+    await expect(page.locator('input[name="city"]')).toHaveValue("");
+
+    // Try to create — should show city-specific error
+    await page.waitForTimeout(300);
+    await page.click('[data-testid="property-create-submit"]');
+    await expect(page.locator("text=请输入")).toBeVisible({ timeout: 5000 });
+
+    // User manually enters city and title
+    await page.fill('input[name="city"]', "北京");
+    await page.fill('input[name="title"]', "朝阳区两室一厅");
+
+    // Now create succeeds
+    await page.click('[data-testid="property-create-submit"]');
+    await page.waitForURL(/\/properties\/[a-f0-9-]+/, { timeout: 15000 });
+  });
+
+  test("29. partial extraction does not fabricate missing fields", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_EXTRACTION_PARTIAL),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("两室，3000元");
+    await page.click("text=AI 智能识别");
+
+    await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 15000 });
+
+    // Only extracted fields are populated
+    await expect(page.locator('input[name="bedrooms"]')).toHaveValue("2");
+    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("3000");
+
+    // Other fields remain empty — no fabrication
+    await expect(page.locator('input[name="city"]')).toHaveValue("");
+    await expect(page.locator('input[name="district"]')).toHaveValue("");
+    await expect(page.locator('input[name="area_sqm"]')).toHaveValue("");
+    await expect(page.locator('input[name="community_name"]')).toHaveValue("");
+
+    // Boolean fields not checked
+    await expect(page.locator('input[name="has_elevator"]')).not.toBeChecked();
+    await expect(page.locator('input[name="pets_allowed"]')).not.toBeChecked();
+    await expect(page.locator('input[name="cooking_allowed"]')).not.toBeChecked();
+  });
+
+  test("30. user overrides AI value before create", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            extraction: {
+              data: {
+                title: "测试房源",
+                city: "上海",
+                monthlyRent: 3000,
+                rentalType: "whole_unit",
+              },
+              missingFields: [],
+              uncertainFields: [],
+              rawText: "上海，月租3000",
+            },
+            error: null,
+          },
+        }),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("上海，月租3000");
+    await page.click("text=AI 智能识别");
+
+    await expect(page.locator("text=AI 识别结果检查")).toBeVisible({ timeout: 15000 });
+
+    // AI filled 3000
+    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("3000");
+
+    // User overrides
+    await page.fill('input[name="monthly_rent"]', "3200");
+
+    // Create
+    await page.click('[data-testid="property-create-submit"]');
+    await page.waitForURL(/\/properties\/[a-f0-9-]+/, { timeout: 15000 });
+
+    // Navigate to edit and verify the overridden value persisted
+    const editUrl = page.url() + "/edit";
+    await page.goto(editUrl);
+    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("3200");
   });
 });

@@ -57,7 +57,7 @@ export interface AiConfirmationCardProps {
   fields: ExtractionField[];
   /** Callback when user confirms all fields */
   onConfirm: (confirmedValues: Record<string, unknown>) => void;
-  /** Callback when user modifies a field */
+  /** Callback when user modifies a field — called on each edit save for immediate form sync */
   onFieldChange?: (key: string, value: unknown) => void;
   /** Callback to ignore/dismiss the AI result */
   onDismiss?: () => void;
@@ -67,6 +67,8 @@ export interface AiConfirmationCardProps {
   validationErrors?: Record<string, string>;
   /** Whether confirmation is in progress */
   confirming?: boolean;
+  /** When true, form was already auto-filled — card is for review/inspection */
+  autoFilled?: boolean;
   /** Custom class */
   className?: string;
 }
@@ -138,6 +140,7 @@ export function AiConfirmationCard({
   statusMessage,
   validationErrors,
   confirming = false,
+  autoFilled = false,
   className,
 }: AiConfirmationCardProps) {
   const [editingKey, setEditingKey] = React.useState<string | null>(null);
@@ -211,7 +214,9 @@ export function AiConfirmationCard({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Sparkles className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold text-sm">AI 提取结果确认</h3>
+          <h3 className="font-semibold text-sm">
+            {autoFilled ? "AI 识别结果检查" : "AI 提取结果确认"}
+          </h3>
         </div>
         <span className="text-xs text-muted-foreground">
           {confirmedCount}/{totalCount} 已确认
@@ -442,19 +447,52 @@ export function AiConfirmationCard({
             忽略，手动填写
           </button>
         )}
-        <button
-          type="button"
-          onClick={handleConfirm}
-          disabled={!allConfirmed || confirming}
-          className={cn(
-            "flex-[2] rounded-md px-4 py-2.5 text-sm font-medium",
-            "min-h-[44px] transition-colors",
-            "bg-primary text-primary-foreground hover:bg-primary/90",
-            "disabled:opacity-50 disabled:cursor-not-allowed"
-          )}
-        >
-          {confirming ? "提交中..." : `确认并填充（${confirmedCount}/${totalCount}）`}
-        </button>
+        {autoFilled ? (
+          <>
+            <button
+              type="button"
+              disabled
+              className={cn(
+                "flex-[2] rounded-md px-4 py-2.5 text-sm font-medium",
+                "min-h-[44px] transition-colors",
+                "bg-primary/10 text-primary border border-primary/30",
+                "inline-flex items-center justify-center gap-2"
+              )}
+            >
+              <Check className="h-4 w-4" />
+              识别结果已填入
+            </button>
+            {localFields.some((f) => f.modified) && (
+              <button
+                type="button"
+                onClick={handleConfirm}
+                disabled={confirming}
+                className={cn(
+                  "flex-1 rounded-md px-4 py-2.5 text-sm font-medium",
+                  "min-h-[44px] transition-colors",
+                  "bg-primary text-primary-foreground hover:bg-primary/90",
+                  "disabled:opacity-50 disabled:cursor-not-allowed"
+                )}
+              >
+                {confirming ? "应用中..." : "应用修改"}
+              </button>
+            )}
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={handleConfirm}
+            disabled={!allConfirmed || confirming}
+            className={cn(
+              "flex-[2] rounded-md px-4 py-2.5 text-sm font-medium",
+              "min-h-[44px] transition-colors",
+              "bg-primary text-primary-foreground hover:bg-primary/90",
+              "disabled:opacity-50 disabled:cursor-not-allowed"
+            )}
+          >
+            {confirming ? "提交中..." : `确认并填充（${confirmedCount}/${totalCount}）`}
+          </button>
+        )}
       </div>
     </div>
   );
