@@ -1,10 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { ArrowLeft, Lock, Loader2, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
+import { ArrowLeft, Lock, Loader2, ChevronDown, ChevronUp, Sparkles, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { VoiceRecorder } from "@/components/ui/voice-recorder";
 import {
   AiConfirmationCard,
   type ExtractionField,
@@ -17,12 +16,108 @@ const inputCls = (e?: boolean) => cn(
   e ? "border-destructive" : "border-input"
 );
 
+// ============================================================
+// Error code → user-friendly message (never expose raw errors)
+// ============================================================
+
+function mapAiError(status: number, code?: string): string {
+  if (status === 401) return "登录状态失效，请重新登录";
+  if (status === 403) return "当前账号没有 AI 智能录入权限";
+  if (status === 429) return "AI 使用额度已达到限制，请稍后再试";
+  switch (code) {
+    case "AI_NOT_CONFIGURED": return "AI 服务尚未配置";
+    case "AI_TIMEOUT": return "AI 识别超时，请重试";
+    case "AI_RATE_LIMITED": return "AI 服务繁忙，请稍后重试";
+    case "AI_INVALID_RESPONSE": return "AI 返回内容无法解析";
+    default: return "AI 识别失败，请稍后重试";
+  }
+}
+
+// ============================================================
+// Field definitions for AI extraction → confirmation card
+// ============================================================
+
+interface FieldDef {
+  key: string;
+  label: string;
+}
+
+const EXTRACTION_FIELD_DEFS: FieldDef[] = [
+  { key: "title", label: "房源标题" },
+  { key: "city", label: "城市" },
+  { key: "district", label: "区域" },
+  { key: "businessArea", label: "商圈" },
+  { key: "communityName", label: "小区名称" },
+  { key: "addressText", label: "大致地址" },
+  { key: "rentalType", label: "租赁方式" },
+  { key: "monthlyRent", label: "月租" },
+  { key: "depositTerms", label: "押金方式" },
+  { key: "bedrooms", label: "卧室数" },
+  { key: "livingRooms", label: "客厅数" },
+  { key: "bathrooms", label: "卫生间数" },
+  { key: "areaSqm", label: "面积" },
+  { key: "floor", label: "楼层" },
+  { key: "orientation", label: "朝向" },
+  { key: "decoration", label: "装修" },
+  { key: "availableFrom", label: "可入住时间" },
+  { key: "minimumLeaseMonths", label: "最短租期(月)" },
+  { key: "hasElevator", label: "有电梯" },
+  { key: "petsAllowed", label: "可养宠物" },
+  { key: "cookingAllowed", label: "可做饭" },
+  { key: "subwayText", label: "地铁信息" },
+  { key: "tags", label: "标签" },
+  { key: "sellingPoints", label: "卖点" },
+  { key: "description", label: "描述" },
+];
+
+// ============================================================
+// Explicit mapper: Extraction result → form field names
+// Only maps fields supported by CreatePropertyInputSchema.
+// ============================================================
+
+const EXTRACTION_TO_FORM_NAME: Record<string, string> = {
+  title: "title",
+  city: "city",
+  district: "district",
+  businessArea: "business_area",
+  communityName: "community_name",
+  addressText: "address_text",
+  rentalType: "rental_type",
+  monthlyRent: "monthly_rent",
+  depositTerms: "deposit_terms",
+  bedrooms: "bedrooms",
+  livingRooms: "living_rooms",
+  bathrooms: "bathrooms",
+  areaSqm: "area_sqm",
+  floor: "floor",
+  orientation: "orientation",
+  decoration: "decoration",
+  availableFrom: "available_from",
+  minimumLeaseMonths: "minimum_lease_months",
+  hasElevator: "has_elevator",
+  petsAllowed: "pets_allowed",
+  cookingAllowed: "cooking_allowed",
+  subwayText: "subway_text",
+  tags: "tags",
+  sellingPoints: "selling_points",
+  description: "description",
+};
+
+const SENSITIVE_KEYS = new Set([
+  "ownerName", "ownerPhone", "exactAddress", "keyLocation",
+]);
+
 export default function NewPropertyPage() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [showPrivate, setShowPrivate] = React.useState(false);
-  const [voiceText, setVoiceText] = React.useState<string | null>(null);
+
+  // AI text input
+  const [aiText, setAiText] = React.useState("");
   const [aiExtracting, setAiExtracting] = React.useState(false);
+  const [aiSuccess, setAiSuccess] = React.useState(false);
+
+  // AI confirmation
   const [confirmFields, setConfirmFields] = React.useState<ExtractionField[] | null>(null);
   const [confirming, setConfirming] = React.useState(false);
   const [extractionMeta, setExtractionMeta] = React.useState<{
@@ -30,26 +125,39 @@ export default function NewPropertyPage() {
     uncertainFields: Array<{ field: string; reason: string }>;
   } | null>(null);
 
-  const handleVoiceTranscription = (text: string) => {
-    setVoiceText(text);
-  };
+  // ==========================================================
+  // AI Extract
+  // ==========================================================
 
   const handleAiExtract = async () => {
-    if (!voiceText) return;
+    const trimmed = aiText.trim();
+    if (!trimmed) {
+      setError("请输入房源描述文字");
+      return;
+    }
+    if (trimmed.length > 5000) {
+      setError("输入文字不能超过 5000 个字符");
+      return;
+    }
+
     setAiExtracting(true);
     setError(null);
+    setAiSuccess(false);
+
     try {
       const resp = await fetch("/api/ai/extract-property", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: voiceText, sourceType: "speech" }),
+        body: JSON.stringify({ text: trimmed, sourceType: "text" }),
       });
       const result = await resp.json();
+
       if (!resp.ok) {
-        setError(result.error?.message ?? "AI 提取失败");
+        setError(mapAiError(resp.status, result.error?.code));
         setAiExtracting(false);
         return;
       }
+
       const extraction = result.data?.extraction;
       if (extraction) {
         const { data: facts, missingFields, uncertainFields } = extraction;
@@ -58,33 +166,10 @@ export default function NewPropertyPage() {
             (u) => u.field
           ) ?? []
         );
-        const missingKeys = new Set(missingFields ?? []);
+        const missingKeys = new Set<string>(missingFields ?? []);
 
-        // Build confirmation fields from extraction result
-        const fieldDefs: Array<{ key: string; label: string; mapKey?: string }> = [
-          { key: "title", label: "房源标题" },
-          { key: "city", label: "城市" },
-          { key: "district", label: "区域" },
-          { key: "businessArea", label: "商圈" },
-          { key: "communityName", label: "小区名称" },
-          { key: "addressText", label: "大致地址" },
-          { key: "rentalType", label: "租赁方式" },
-          { key: "monthlyRent", label: "月租" },
-          { key: "depositTerms", label: "押金方式" },
-          { key: "bedrooms", label: "卧室数" },
-          { key: "livingRooms", label: "客厅数" },
-          { key: "bathrooms", label: "卫生间数" },
-          { key: "areaSqm", label: "面积" },
-          { key: "floor", label: "楼层" },
-          { key: "availableFrom", label: "可入住时间" },
-          { key: "hasElevator", label: "有电梯" },
-          { key: "petsAllowed", label: "可养宠物" },
-          { key: "cookingAllowed", label: "可做饭" },
-        ];
-
-        const fields: ExtractionField[] = fieldDefs.map((def) => {
-          const val =
-            (facts as Record<string, unknown>)[def.key];
+        const fields: ExtractionField[] = EXTRACTION_FIELD_DEFS.map((def) => {
+          const val = (facts as Record<string, unknown>)[def.key];
           const isMissing = missingKeys.has(def.key) || (val === null || val === undefined || val === "");
           const isUncertain = uncertainKeys.has(def.key);
 
@@ -100,67 +185,73 @@ export default function NewPropertyPage() {
             )?.reason,
             missing: isMissing,
             source: "AI 提取",
-            sensitive: false,
+            sensitive: SENSITIVE_KEYS.has(def.key),
           };
         });
 
-        // Mark known sensitive fields
-        const sensitiveKeys = new Set([
-          "ownerName", "ownerPhone", "exactAddress", "keyLocation",
-        ]);
-        for (const f of fields) {
-          if (sensitiveKeys.has(f.key)) f.sensitive = true;
-        }
-
         setConfirmFields(fields);
-        setExtractionMeta({ missingFields: missingFields ?? [], uncertainFields: uncertainFields ?? [] });
+        setExtractionMeta({
+          missingFields: missingFields ?? [],
+          uncertainFields: uncertainFields ?? [],
+        });
+        setAiSuccess(true);
       }
     } catch {
-      setError("AI 提取失败，请检查网络后重试");
+      setError("AI 识别失败，请检查网络后重试");
     } finally {
       setAiExtracting(false);
     }
   };
+
+  // Handle Enter key in textarea: Ctrl/Cmd+Enter to submit
+  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      e.preventDefault();
+      if (!aiExtracting) handleAiExtract();
+    }
+  };
+
+  // ==========================================================
+  // Apply confirmed fields to form
+  // ==========================================================
 
   const handleConfirmFields = (confirmedValues: Record<string, unknown>) => {
     setConfirming(true);
     const form = document.querySelector("form");
     if (!form) { setConfirming(false); return; }
 
-    const keyToFormName: Record<string, string> = {
-      title: "title", city: "city", district: "district",
-      businessArea: "business_area", communityName: "community_name",
-      addressText: "address_text", rentalType: "rental_type",
-      monthlyRent: "monthly_rent", depositTerms: "deposit_terms",
-      bedrooms: "bedrooms", livingRooms: "living_rooms",
-      bathrooms: "bathrooms", areaSqm: "area_sqm",
-      floor: "floor", availableFrom: "available_from",
-      hasElevator: "has_elevator", petsAllowed: "pets_allowed",
-      cookingAllowed: "cooking_allowed",
-    };
-
     for (const [key, value] of Object.entries(confirmedValues)) {
-      const formName = keyToFormName[key];
-      if (!formName) continue;
+      const formName = EXTRACTION_TO_FORM_NAME[key];
+      if (!formName) continue; // Ignore unknown fields
+
       if (typeof value === "boolean") {
         const el = form.elements.namedItem(formName) as HTMLInputElement | null;
         if (el) el.checked = value;
+      } else if (Array.isArray(value)) {
+        const el = form.elements.namedItem(formName) as HTMLInputElement | null;
+        if (el) el.value = value.join(", ");
       } else if (value !== null && value !== undefined && value !== "") {
         const el = form.elements.namedItem(formName) as HTMLInputElement | HTMLSelectElement | null;
         if (el) el.value = String(value);
       }
     }
+
     setConfirmFields(null);
-    setVoiceText(null);
+    setAiText("");
     setExtractionMeta(null);
+    setAiSuccess(false);
     setConfirming(false);
   };
 
   const handleDismissExtraction = () => {
     setConfirmFields(null);
-    setVoiceText(null);
     setExtractionMeta(null);
+    setAiSuccess(false);
   };
+
+  // ==========================================================
+  // Create property (unchanged)
+  // ==========================================================
 
   const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -185,6 +276,10 @@ export default function NewPropertyPage() {
     } catch { setError("创建失败，请检查网络后重试"); setLoading(false); }
   };
 
+  // ==========================================================
+  // Render
+  // ==========================================================
+
   return (
     <div className="px-4 py-4 sm:px-6 sm:py-6 max-w-2xl mx-auto">
       <div className="flex items-center gap-4 mb-6">
@@ -192,20 +287,73 @@ export default function NewPropertyPage() {
         <div><h1 className="text-xl font-bold">录入房源</h1></div>
       </div>
       <form onSubmit={handleCreate} className="space-y-6">
-        {/* Voice Input Section */}
+        {/* AI Smart Input Section */}
         <section className="space-y-3 rounded-lg border p-4">
           <h2 className="font-semibold text-sm flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-primary" />
-            语音录入（AI 智能提取）
+            AI 智能录入
           </h2>
           <p className="text-xs text-muted-foreground">
-            口述房源信息，AI 将自动提取并填充到下方表单
+            直接描述房源信息，AI 会自动帮你填写表单
           </p>
-          <VoiceRecorder
-            onTranscription={handleVoiceTranscription}
-            purpose="property"
-          />
-          {confirmFields ? (
+
+          {/* Textarea */}
+          <div className="space-y-2">
+            <textarea
+              value={aiText}
+              onChange={(e) => {
+                setAiText(e.target.value);
+                if (aiSuccess) setAiSuccess(false);
+              }}
+              onKeyDown={handleTextareaKeyDown}
+              placeholder="例如：万科城二期，3室2厅89平，朝南，月租6500元，精装修，有电梯，随时入住……"
+              rows={4}
+              maxLength={5000}
+              disabled={aiExtracting}
+              className={cn(
+                "w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm min-h-[100px] resize-y",
+                "placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-1",
+                "disabled:cursor-not-allowed disabled:opacity-50"
+              )}
+            />
+            <div className="flex items-center justify-between">
+              <span className={cn(
+                "text-xs",
+                aiText.length > 4500 ? "text-destructive" : "text-muted-foreground"
+              )}>
+                {aiText.length}/5000
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Ctrl+Enter 快速识别
+              </span>
+            </div>
+          </div>
+
+          {/* AI Extract button */}
+          {!confirmFields && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleAiExtract}
+                disabled={aiExtracting || aiText.trim().length === 0}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 min-h-[44px] disabled:opacity-50 transition-colors"
+              >
+                {aiExtracting ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" />识别中…</>
+                ) : (
+                  <><Sparkles className="h-4 w-4" />AI 智能识别</>
+                )}
+              </button>
+              {aiSuccess && !aiExtracting && (
+                <p className="text-xs text-green-600 flex items-center gap-1">
+                  <Sparkles className="h-3 w-3" />识别完成，请在下方确认结果
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Confirmation Card */}
+          {confirmFields && (
             <AiConfirmationCard
               fields={confirmFields}
               onConfirm={handleConfirmFields}
@@ -217,27 +365,10 @@ export default function NewPropertyPage() {
                   : "AI 提取完成，请确认后填充表单"
               }
             />
-          ) : voiceText ? (
-            <div className="space-y-2">
-              <div className="p-3 rounded bg-muted/50 text-sm whitespace-pre-wrap max-h-32 overflow-y-auto">
-                {voiceText}
-              </div>
-              <button
-                type="button"
-                onClick={handleAiExtract}
-                disabled={aiExtracting}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 min-h-[44px] disabled:opacity-50 transition-colors"
-              >
-                {aiExtracting ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" />AI 提取中...</>
-                ) : (
-                  <><Sparkles className="h-4 w-4" />AI 提取并填充表单</>
-                )}
-              </button>
-            </div>
-          ) : null}
+          )}
         </section>
 
+        {/* Basic Info */}
         <section className="space-y-4 rounded-lg border p-4">
           <h2 className="font-semibold text-sm">基本信息</h2>
           <div className="space-y-1.5"><label className="text-sm font-medium">房源标题 *</label><input name="title" required className={inputCls()} placeholder="例如：阳光花园精装两居室" /></div>
@@ -250,6 +381,8 @@ export default function NewPropertyPage() {
           <div className="space-y-1.5"><label className="text-sm font-medium">地址</label><input name="address_text" className={inputCls()} placeholder="大致地址" /></div>
           <div className="space-y-1.5"><label className="text-sm font-medium">租赁方式 *</label><select name="rental_type" defaultValue="whole_unit" className={inputCls()}><option value="whole_unit">整租</option><option value="shared">合租</option></select></div>
         </section>
+
+        {/* Rent & Specs */}
         <section className="space-y-4 rounded-lg border p-4">
           <h2 className="font-semibold text-sm">租金与规格</h2>
           <div className="grid grid-cols-2 gap-3">
@@ -267,6 +400,8 @@ export default function NewPropertyPage() {
           </div>
           <div className="space-y-1.5"><label className="text-sm font-medium">可入住时间</label><input name="available_from" type="date" className={inputCls()} /></div>
         </section>
+
+        {/* Facilities */}
         <section className="space-y-4 rounded-lg border p-4">
           <h2 className="font-semibold text-sm">设施</h2>
           <div className="grid grid-cols-2 gap-3">
@@ -275,6 +410,8 @@ export default function NewPropertyPage() {
             <label className="flex items-center gap-2 min-h-[44px] cursor-pointer"><input type="checkbox" name="cooking_allowed" className="h-4 w-4" /><span className="text-sm">可做饭</span></label>
           </div>
         </section>
+
+        {/* Sensitive Info */}
         <section className="rounded-lg border">
           <button type="button" onClick={() => setShowPrivate(!showPrivate)} className={cn("flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-muted/50 min-h-[44px]", showPrivate ? "rounded-t-lg" : "rounded-lg")}>
             <span className="flex items-center gap-2"><Lock className="h-4 w-4 text-amber-500" />敏感信息（仅本门店可见）</span>
@@ -289,7 +426,13 @@ export default function NewPropertyPage() {
             </div>
           )}
         </section>
-        {error && <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive">{error}</div>}
+
+        {error && (
+          <div className="rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
         <button type="submit" disabled={loading} data-testid="property-create-submit" className="w-full inline-flex items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 min-h-[48px] disabled:opacity-50 transition-colors">
           {loading ? <><Loader2 className="h-4 w-4 animate-spin" />创建中...</> : "创建房源"}
         </button>

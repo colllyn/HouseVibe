@@ -235,3 +235,238 @@ test.describe("Property CRUD", () => {
     await expect(elevCheckbox).not.toBeChecked();
   });
 });
+
+// ============================================================
+// AI Text Entry E2E (replaces voice recorder)
+// ============================================================
+
+const MOCK_EXTRACTION = {
+  data: {
+    extraction: {
+      data: {
+        title: "万科城二期",
+        city: "深圳",
+        district: "南山区",
+        communityName: "万科城",
+        monthlyRent: 6500,
+        depositTerms: "押二付一",
+        bedrooms: 3,
+        livingRooms: 2,
+        bathrooms: 1,
+        areaSqm: 89,
+        floor: 15,
+        orientation: "朝南",
+        decoration: "精装修",
+        hasElevator: true,
+        availableFrom: "2026-09-01",
+      },
+      missingFields: ["petsAllowed", "cookingAllowed", "description"],
+      uncertainFields: [{ field: "floor", reason: "未明确提及具体楼层" }],
+      rawText: "万科城二期，南山科技园附近，3室2厅，89平，朝南，中高楼层，月租6500，押二付一，有电梯，精装修，随时入住。",
+    },
+    error: null,
+  },
+};
+
+test.describe("AI Text Entry", () => {
+  test("18. AI smart input section renders on property creation page", async ({ page }) => {
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    // Verify the AI text input section is present
+    await expect(page.locator("text=AI 智能录入")).toBeVisible({ timeout: 10000 });
+    // Verify textarea is present
+    await expect(page.locator("textarea[placeholder*='万科城']")).toBeVisible();
+    // Verify AI button is present
+    await expect(page.locator("text=AI 智能识别")).toBeVisible();
+    // Verify voice recorder is NOT present
+    await expect(page.locator("text=语音录入")).not.toBeVisible();
+    await expect(page.locator("text=点击开始录音")).not.toBeVisible();
+  });
+
+  test("19. AI text entry full flow", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_EXTRACTION),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("万科城二期，南山科技园附近，3室2厅，89平，朝南，月租6500，押二付一，有电梯，精装修");
+
+    await page.click("text=AI 智能识别");
+    await expect(page.locator("text=AI 提取结果确认")).toBeVisible({ timeout: 15000 });
+
+    // Verify extracted fields visible
+    await expect(page.locator("text=万科城二期")).toBeVisible();
+    await expect(page.locator("text=南山区")).toBeVisible();
+
+    // Confirm and fill
+    await page.click("text=确认并填充");
+
+    // Verify form populated
+    await expect(page.locator('input[name="title"]')).toHaveValue("万科城二期");
+    await expect(page.locator('input[name="city"]')).toHaveValue("深圳");
+    await expect(page.locator('input[name="district"]')).toHaveValue("南山区");
+    await expect(page.locator('input[name="community_name"]')).toHaveValue("万科城");
+    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("6500");
+
+    // Save
+    await page.click('[data-testid="property-create-submit"]');
+    await page.waitForURL(/\/properties\/[a-f0-9-]+/, { timeout: 15000 });
+    await expect(page.locator("h1")).toContainText("万科城二期");
+  });
+
+  test("20. empty input shows validation error", async ({ page }) => {
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+    await page.click("text=AI 智能识别");
+    await expect(page.locator("text=请输入房源描述文字")).toBeVisible({ timeout: 5000 });
+  });
+
+  test("21. API failure shows user-friendly error", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: null,
+          error: { code: "AI_NOT_CONFIGURED", message: "AI service not configured" },
+        }),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("test");
+    await page.click("text=AI 智能识别");
+
+    await expect(page.locator("text=AI 服务尚未配置")).toBeVisible({ timeout: 10000 });
+  });
+
+  test("22. 429 quota exceeded error", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 429,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: null,
+          error: { code: "QUOTA_EXCEEDED", message: "quota exceeded" },
+        }),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("test");
+    await page.click("text=AI 智能识别");
+
+    await expect(page.locator("text=AI 使用额度已达到限制")).toBeVisible({ timeout: 10000 });
+  });
+
+  test("23. double-click prevention", async ({ page }) => {
+    let requestCount = 0;
+    await page.route("**/api/ai/extract-property", async (route) => {
+      requestCount++;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_EXTRACTION),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("test");
+
+    const btn = page.locator("text=AI 智能识别");
+    await btn.click();
+    await btn.click();
+    await btn.click();
+
+    await expect(page.locator("text=AI 提取结果确认")).toBeVisible({ timeout: 15000 });
+    expect(requestCount).toBe(1);
+  });
+
+  test("24. partial fields missing", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: {
+            extraction: {
+              data: { bedrooms: 2, monthlyRent: 6500 },
+              missingFields: ["title", "city", "areaSqm", "district", "communityName"],
+              uncertainFields: [],
+              rawText: "test",
+            },
+            error: null,
+          },
+        }),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("test");
+    await page.click("text=AI 智能识别");
+
+    await expect(page.locator("text=AI 提取结果确认")).toBeVisible({ timeout: 10000 });
+    await page.click("text=确认并填充");
+
+    await expect(page.locator('input[name="bedrooms"]')).toHaveValue("2");
+    await expect(page.locator('input[name="monthly_rent"]')).toHaveValue("6500");
+    await expect(page.locator('input[name="title"]')).toHaveValue("");
+    await expect(page.locator('input[name="city"]')).toHaveValue("");
+    await expect(page.locator('input[name="area_sqm"]')).toHaveValue("");
+  });
+
+  test("25. mobile 375px no horizontal scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.locator("text=AI 智能录入")).toBeVisible({ timeout: 10000 });
+
+    const sw = await page.evaluate(() => document.documentElement.scrollWidth);
+    const cw = await page.evaluate(() => document.documentElement.clientWidth);
+    expect(sw).toBeLessThanOrEqual(cw + 10);
+  });
+
+  test("26. dismiss clears confirmation card", async ({ page }) => {
+    await page.route("**/api/ai/extract-property", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(MOCK_EXTRACTION),
+      });
+    });
+
+    await page.goto("/properties/new");
+    await page.waitForLoadState("networkidle");
+
+    const textarea = page.locator("textarea[placeholder*='万科城']");
+    await textarea.fill("test");
+    await page.click("text=AI 智能识别");
+
+    await expect(page.locator("text=AI 提取结果确认")).toBeVisible({ timeout: 10000 });
+    await page.click("text=忽略，手动填写");
+
+    await expect(page.locator("text=AI 提取结果确认")).not.toBeVisible();
+    await expect(page.locator("text=AI 智能识别")).toBeVisible();
+  });
+});
