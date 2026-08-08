@@ -83,6 +83,47 @@ async function deleteTestUser(userId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 test.describe("E2E Auth Flows", () => {
+  // ---- E2E-0: Root redirect — unauthenticated / → /login ----
+  test("E2E-0a: Unauthenticated / redirects to /login", async ({ page }) => {
+    await page.goto("/", { waitUntil: "commit" });
+
+    // Should be redirected to /login
+    await page.waitForURL(/\/login/, { timeout: 10000 });
+    const url = new URL(page.url());
+    expect(url.pathname).toBe("/login");
+  });
+
+  // ---- E2E-0: Root redirect — authenticated / → /dashboard ----
+  test("E2E-0b: Authenticated / redirects to /dashboard", async ({ page }) => {
+    const email = uniqueEmail("root-redirect");
+    const user = await createTestUser(email, TEST_PASSWORD);
+
+    try {
+      await page.goto("/login");
+      await page.waitForLoadState("networkidle");
+
+      await page.fill("#email", email);
+      await page.fill("#password", TEST_PASSWORD);
+      await page.click('button[type="submit"]');
+
+      // Wait for navigation after login
+      await page.waitForURL(/\/onboarding|\/dashboard/, {
+        timeout: 15000,
+      });
+
+      // Now visit root — should redirect to /dashboard (or /onboarding if 0 workspaces)
+      await page.goto("/", { waitUntil: "commit" });
+      await page.waitForURL(/\/onboarding|\/dashboard/, {
+        timeout: 10000,
+      });
+
+      const url = new URL(page.url());
+      expect(["/onboarding", "/dashboard"]).toContain(url.pathname);
+    } finally {
+      if (user.id) await deleteTestUser(user.id);
+    }
+  });
+
   // ---- E2E-1: Unauthenticated protection ----
   test("E2E-1: Unauthenticated user visiting /dashboard is redirected to /login with ?next= param", async ({
     page,

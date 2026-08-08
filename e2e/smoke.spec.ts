@@ -9,22 +9,23 @@
 
 import { test, expect } from "@playwright/test";
 
-test.describe("Homepage", () => {
-  test("loads successfully at /", async ({ page }) => {
+test.describe("Homepage (root redirect)", () => {
+  test("unauthenticated / redirects to /login", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
 
-    const response = await page.goto("/");
+    // Playwright follows redirects; unauthenticated → /login
+    await page.goto("/", { waitUntil: "commit" });
 
-    // HTTP-level success
-    expect(response?.status()).toBe(200);
+    // Should land on /login
+    await page.waitForURL(/\/login/, { timeout: 10000 });
+    expect(new URL(page.url()).pathname).toBe("/login");
 
-    // Content renders
-    await expect(
-      page.locator("text=阳光智家 HouseVibe")
-    ).toBeVisible({ timeout: 10000 });
+    // Login page content is visible
+    await expect(page.getByRole("heading", { name: "登录" })).toBeVisible({
+      timeout: 10000,
+    });
 
-    // No uncaught client-side errors
     expect(errors).toEqual([]);
   });
 });
@@ -46,18 +47,18 @@ test.describe("Dashboard", () => {
 });
 
 test.describe("Responsive layout", () => {
-  test("homepage content is visible at mobile viewport (375px)", async ({
+  test("root / redirects to login at mobile viewport (375px)", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 375, height: 812 });
 
-    const response = await page.goto("/");
-    expect(response?.status()).toBe(200);
+    await page.goto("/", { waitUntil: "commit" });
+    await page.waitForURL(/\/login/, { timeout: 10000 });
 
-    // The main heading should be visible
-    await expect(
-      page.locator("text=阳光智家 HouseVibe")
-    ).toBeVisible({ timeout: 10000 });
+    // Login heading should be visible at mobile width
+    await expect(page.getByRole("heading", { name: "登录" })).toBeVisible({
+      timeout: 10000,
+    });
 
     // The page should not have horizontal overflow at mobile width
     const bodyWidth = await page.evaluate(
@@ -66,17 +67,17 @@ test.describe("Responsive layout", () => {
     expect(bodyWidth).toBeLessThanOrEqual(375);
   });
 
-  test("homepage content is visible at desktop viewport (1280px)", async ({
+  test("root / redirects to login at desktop viewport (1280px)", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
 
-    const response = await page.goto("/");
-    expect(response?.status()).toBe(200);
+    await page.goto("/", { waitUntil: "commit" });
+    await page.waitForURL(/\/login/, { timeout: 10000 });
 
-    await expect(
-      page.locator("text=阳光智家 HouseVibe")
-    ).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("heading", { name: "登录" })).toBeVisible({
+      timeout: 10000,
+    });
   });
 
   test("dashboard redirects to login at mobile viewport (375px)", async ({
@@ -93,7 +94,7 @@ test.describe("Responsive layout", () => {
 });
 
 test.describe("Console cleanliness", () => {
-  test("homepage produces no uncaught console errors", async ({ page }) => {
+  test("root / redirect produces no uncaught console errors", async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (err) => errors.push(err.message));
     page.on("console", (msg) => {
@@ -102,7 +103,8 @@ test.describe("Console cleanliness", () => {
       }
     });
 
-    await page.goto("/");
+    await page.goto("/", { waitUntil: "commit" });
+    await page.waitForURL(/\/login/, { timeout: 10000 });
     await page.waitForLoadState("networkidle");
 
     // Filter out known non-critical CSS/asset warnings that are not real errors
