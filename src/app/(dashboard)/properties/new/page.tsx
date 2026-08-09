@@ -35,6 +35,7 @@ function mapAiError(status: number, code?: string): string {
     case "AI_NOT_CONFIGURED": return "AI 服务尚未配置";
     case "AI_TIMEOUT": return "AI 识别超时，请重试";
     case "AI_RATE_LIMITED": return "AI 服务繁忙，请稍后重试";
+    case "AI_UPSTREAM_ERROR": return "AI 服务暂时不可用";
     case "AI_INVALID_RESPONSE": return "AI 返回内容无法解析";
     default: return "AI 识别失败，请稍后重试";
   }

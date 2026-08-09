@@ -106,6 +106,17 @@ export default defineConfig({
       },
       dependencies: ["setup"],
     },
+    // Client AI Text Autofill E2E
+    {
+      name: "client-ai-autofill",
+      testMatch: /client-ai-autofill\.spec\.ts/,
+      fullyParallel: false,
+      use: {
+        browserName: "chromium",
+        storageState: "e2e/.auth/owner.json",
+      },
+      dependencies: ["setup"],
+    },
     // Property Matching E2E
     {
       name: "matching",
@@ -154,7 +165,7 @@ export default defineConfig({
     // Default chromium (auth, admin, settings E2E — no storageState needed)
     {
       name: "chromium",
-      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|matching-flows|semantic-search-ui|semantic-search-real|dashboard-flows)).*\.spec\.ts$/,
+      testMatch: /^(?!.*(auth\.setup|property-flows|property-filters|property-media|client-flows|client-interactions|client-ai-autofill|matching-flows|semantic-search-ui|semantic-search-real|dashboard-flows)).*\.spec\.ts$/,
       use: { browserName: "chromium" },
       dependencies: ["setup"],
     },
