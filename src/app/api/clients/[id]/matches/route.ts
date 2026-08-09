@@ -1,11 +1,10 @@
 /**
  * GET /api/clients/[id]/matches
- * List matches for a client. Requires: property_matching entitlement.
+ * List matches for a client.
  */
 
 import type { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
-import { hasFeature } from "@/features/access-control/guards";
 
 function urlOrigin(req: NextRequest): string {
   const proto = req.headers.get("x-forwarded-proto") ?? "http";
@@ -48,15 +47,7 @@ export async function GET(
 
     const workspaceId = member.workspace_id;
 
-    // 3. Entitlement check
-    const entitled = await hasFeature("property_matching");
-    if (!entitled)
-      return jsonResponse(
-        { data: null, error: { code: "FEATURE_NOT_ALLOWED", message: "需要 property_matching 权限" } },
-        { status: 403, headers: h }
-      );
-
-    // 4. Verify client exists in workspace
+    // 3. Verify client exists in workspace
     const { data: clientExists } = await client
       .from("clients")
       .select("id")
@@ -71,7 +62,7 @@ export async function GET(
         { status: 404, headers: h }
       );
 
-    // 5. Fetch matches via RPC (ordered by score DESC, excludes archived)
+    // 4. Fetch matches via RPC (ordered by score DESC, excludes archived)
     const { data: matches, error: rpcErr } = await client.rpc("get_client_matches", {
       p_client_id: clientId,
     });
@@ -90,7 +81,7 @@ export async function GET(
       );
     }
 
-    // 6. Enrich matches with property titles
+    // 5. Enrich matches with property titles
     const enriched = [];
     if (matches && Array.isArray(matches)) {
       for (const match of matches as Array<Record<string, unknown>>) {

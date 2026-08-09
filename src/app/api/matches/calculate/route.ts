@@ -1,12 +1,10 @@
 /**
  * POST /api/matches/calculate
  * Calculate matches for a client against specified (or all available) properties.
- * Requires: property_matching entitlement.
  */
 
 import type { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
-import { hasFeature } from "@/features/access-control/guards";
 import { CalculateMatchInputSchema } from "@/features/matching/schemas";
 import { calculateMatches } from "@/features/matching/rule-engine";
 import type { ClientRecord, PropertyRecord } from "@/features/matching/rule-engine";
@@ -48,15 +46,7 @@ export async function POST(request: NextRequest) {
 
     const workspaceId = member.workspace_id;
 
-    // 3. Entitlement check (must use hasFeature for route handlers)
-    const entitled = await hasFeature("property_matching");
-    if (!entitled)
-      return jsonResponse(
-        { data: null, error: { code: "FEATURE_NOT_ALLOWED", message: "需要 property_matching 权限" } },
-        { status: 403, headers: h }
-      );
-
-    // 4. Parse body
+    // 3. Parse body
     const body = await request.json();
     const parsed = CalculateMatchInputSchema.safeParse(body);
     if (!parsed.success) {
@@ -72,7 +62,7 @@ export async function POST(request: NextRequest) {
 
     const { clientId, propertyIds, weightOverrides } = parsed.data;
 
-    // 5. Fetch client (workspace-scoped, not soft-deleted)
+    // 4. Fetch client (workspace-scoped, not soft-deleted)
     const { data: clientRow, error: clientErr } = await client
       .from("clients")
       .select("*")
@@ -88,7 +78,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 6. Fetch properties (workspace-scoped, status='available', not soft-deleted)
+    // 5. Fetch properties (workspace-scoped, status='available', not soft-deleted)
     let propertyQuery = client
       .from("properties")
       .select("*")
@@ -109,7 +99,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 7. Run deterministic rule engine
+    // 6. Run deterministic rule engine
     const results = calculateMatches(
       clientRow as unknown as ClientRecord,
       properties as unknown as PropertyRecord[],
@@ -118,7 +108,7 @@ export async function POST(request: NextRequest) {
 
     const matchedCount = results.filter((r) => r.score > 0).length;
 
-    // 8. Persist matches via upsert RPC (for matches that passed hard filters)
+    // 7. Persist matches via upsert RPC (for matches that passed hard filters)
     const persistedMatches = [];
     const persistedPropertyIds = new Set<string>();
     for (const result of results) {
@@ -141,7 +131,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 9. Archive previously-persisted matches that now fail hard filters (contract §6)
+    // 8. Archive previously-persisted matches that now fail hard filters (contract §6)
     // Find all existing non-archived matches for this client
     const { data: existingMatches } = await client
       .from("property_matches")

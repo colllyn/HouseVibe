@@ -135,8 +135,8 @@ export default function ClientDetailPage() {
         const errCode = json.error?.code;
         if (errCode === "UNAUTHENTICATED") {
           setMatchesError("登录已失效，请重新登录");
-        } else if (errCode === "WORKSPACE_ACCESS_DENIED" || errCode === "FEATURE_NOT_ALLOWED") {
-          setMatchesError("无权访问匹配功能");
+        } else if (errCode === "WORKSPACE_ACCESS_DENIED") {
+          setMatchesError("无权访问该客户的匹配数据");
         } else {
           setMatchesError(json.error?.message ?? "加载失败");
         }

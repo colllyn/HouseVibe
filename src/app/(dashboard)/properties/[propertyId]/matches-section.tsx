@@ -20,8 +20,8 @@ export function PropertyMatchSection({ propertyId }: { propertyId: string }) {
         const errCode = json.error?.code;
         if (errCode === "UNAUTHENTICATED") {
           setError("登录已失效，请重新登录");
-        } else if (errCode === "WORKSPACE_ACCESS_DENIED" || errCode === "FEATURE_NOT_ALLOWED") {
-          setError("无权访问匹配功能");
+        } else if (errCode === "WORKSPACE_ACCESS_DENIED") {
+          setError("无权访问该房源的匹配数据");
         } else {
           setError(json.error?.message ?? "加载失败");
         }

@@ -107,8 +107,8 @@ function MatchesContent() {
         const errCode = json.error?.code;
         if (errCode === "UNAUTHENTICATED") {
           setMatchesError("登录已失效，请重新登录");
-        } else if (errCode === "WORKSPACE_ACCESS_DENIED" || errCode === "FEATURE_NOT_ALLOWED") {
-          setMatchesError("无权访问匹配功能");
+        } else if (errCode === "WORKSPACE_ACCESS_DENIED") {
+          setMatchesError("无权访问该客户的匹配数据");
         } else {
           setMatchesError(json.error?.message ?? "加载匹配结果失败");
         }
@@ -193,8 +193,8 @@ function MatchesContent() {
         const errCode = json.error?.code;
         if (errCode === "UNAUTHENTICATED") {
           setMatchesError("登录已失效，请重新登录");
-        } else if (errCode === "WORKSPACE_ACCESS_DENIED" || errCode === "FEATURE_NOT_ALLOWED") {
-          setMatchesError("无权访问匹配功能");
+        } else if (errCode === "WORKSPACE_ACCESS_DENIED") {
+          setMatchesError("无权访问该客户的工作区");
         } else if (errCode === "RESOURCE_NOT_FOUND") {
           setMatchesError("客户不存在或已被删除");
         } else {

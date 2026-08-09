@@ -1,11 +1,10 @@
 /**
  * PATCH /api/matches/[id]
- * Update match status (dismiss/archive). Requires: property_matching entitlement.
+ * Update match status (dismiss/archive).
  */
 
 import type { NextRequest } from "next/server";
 import { createRouteHandlerClient } from "@/lib/supabase/route-handler";
-import { hasFeature } from "@/features/access-control/guards";
 import { MatchStatusEnum } from "@/features/matching/schemas";
 import { z } from "zod";
 
@@ -52,15 +51,7 @@ export async function PATCH(
         { status: 403, headers: h }
       );
 
-    // 3. Entitlement check
-    const entitled = await hasFeature("property_matching");
-    if (!entitled)
-      return jsonResponse(
-        { data: null, error: { code: "FEATURE_NOT_ALLOWED", message: "需要 property_matching 权限" } },
-        { status: 403, headers: h }
-      );
-
-    // 4. Parse body
+    // 3. Parse body
     const body = await request.json();
     const parsed = UpdateMatchStatusSchema.safeParse(body);
     if (!parsed.success) {
@@ -76,7 +67,7 @@ export async function PATCH(
 
     const { status: newStatus } = parsed.data;
 
-    // 5. Verify match exists and belongs to workspace
+    // 4. Verify match exists and belongs to workspace
     const { data: matchRow, error: matchErr } = await client
       .from("property_matches")
       .select("id, workspace_id, status")
@@ -97,7 +88,7 @@ export async function PATCH(
       );
     }
 
-    // 6. No-op check
+    // 5. No-op check
     if (matchRow.status === newStatus) {
       return jsonResponse(
         { data: matchRow, error: null },
@@ -105,7 +96,7 @@ export async function PATCH(
       );
     }
 
-    // 7. Call RPC for validated state transition + audit
+    // 6. Call RPC for validated state transition + audit
     const { data: result, error: rpcErr } = await client.rpc("update_match_status", {
       p_match_id: matchId,
       p_new_status: newStatus,
