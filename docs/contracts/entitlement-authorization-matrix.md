@@ -107,9 +107,11 @@
 
 ### 3.3 property_matching
 
+> **2026-08-09**: 匹配功能已调整为 Workspace 核心功能。`property_matching` feature key 保留用于管理追踪，不再作为 API 门控。
+
 | 守卫点 | 方式 |
 |---|---|
-| POST /api/matches/calculate | 验证 `has_feature('property_matching')` |
+| 匹配 API routes | Auth + Workspace 成员关系 + 资源 workspace scoping（无需 feature entitlement） |
 | 匹配结果 RLS | `is_workspace_member` 隔离 |
 
 ---
