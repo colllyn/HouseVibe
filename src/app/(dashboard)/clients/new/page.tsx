@@ -159,14 +159,18 @@ export default function NewClientPage() {
         // --- 1. Auto-fill form immediately (don't wait for confirm) ---
         const formValues = mapExtractionToFormValues(factsObj);
 
-        // Auto-expand budget section if AI returned budget fields,
-        // then apply values after re-render (via useEffect)
+        // Auto-expand budget section if AI returned budget fields.
+        // If already expanded, apply directly; otherwise defer via useEffect.
         if (
           formValues["budget_min"] != null ||
           formValues["budget_max"] != null
         ) {
-          pendingFormValuesRef.current = formValues;
-          setShowBudget(true);
+          if (showBudget) {
+            applyValuesToForm(formValues);
+          } else {
+            pendingFormValuesRef.current = formValues;
+            setShowBudget(true);
+          }
         } else {
           applyValuesToForm(formValues);
         }
@@ -434,7 +438,7 @@ export default function NewClientPage() {
               >
                 {aiText.length}/5000
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="hidden sm:inline text-xs text-muted-foreground">
                 Ctrl+Enter 快速识别
               </span>
             </div>
