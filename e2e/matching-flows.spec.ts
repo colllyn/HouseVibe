@@ -192,14 +192,12 @@ test.describe("Property Matching E2E", () => {
     await ctx.close();
   });
 
-  // 17. Unauthenticated denial — no auth cookies → 401 or 403
-  test("17. unauthenticated returns 401", async ({ browser }) => {
-    const ctx = await browser.newContext(); // no storageState = not logged in
-    const unauthPage = await ctx.newPage();
-    const res = await unauthPage.request.get(`/api/clients/${clientId}/matches`);
-    expect(res.status()).toBeGreaterThanOrEqual(400);
-    expect(res.status()).toBeLessThan(500);
-    await ctx.close();
+  // 17. Unauthenticated denial — explicit { storageState: undefined } to prevent project-level leak
+  test("17. unauthenticated returns 401", async ({ playwright }) => {
+    const reqCtx = await playwright.request.newContext({ storageState: undefined });
+    const res = await reqCtx.get(`/api/clients/${clientId}/matches`);
+    expect(res.status()).toBe(401);
+    await reqCtx.dispose();
   });
 
   // 18. Mobile 375px layout
@@ -287,7 +285,8 @@ test.describe("Matching Dashboard Crash Regression", () => {
     // Should still render without Next.js error overlay
     await expect(page.locator("[data-nextjs-error-boundary]")).not.toBeAttached();
     // Client should be visible in the select (Zod validation extracts data.clients)
-    await expect(page.locator("select option")).toContainText("Test Client", { timeout: 5000 });
+    // Use select element rather than option to avoid strict-mode multi-element match
+    await expect(page.locator("select")).toContainText("Test Client", { timeout: 5000 });
   });
 
   test("handles null data in match API response without crash", async ({ page }) => {
