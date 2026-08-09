@@ -8,6 +8,7 @@ import { StageBadge, STAGE_LABELS } from "@/features/clients/components/stage-ba
 import { InteractionTimeline } from "@/features/clients/components/interaction-timeline";
 import { MatchList } from "@/features/matching/components";
 import type { MatchItem } from "@/features/matching/components/match-list";
+import { MatchListResponseSchema } from "@/features/matching/schemas";
 import { cn } from "@/lib/utils";
 
 interface ClientData {
@@ -73,11 +74,21 @@ export default function ClientDetailPage() {
     setLoadError(null);
     try {
       const resp = await fetch(`/api/clients/${clientId}`);
-      if (!resp.ok) throw new Error("加载失败");
       const json = await resp.json();
-      setClient((json.data ?? json) as ClientData);
-    } catch (e) {
-      setLoadError((e as Error).message);
+      if (!resp.ok) {
+        setLoadError(json.error?.message ?? "加载失败");
+        setClient(null);
+      } else {
+        if (json.data && typeof json.data === "object" && "id" in json.data) {
+          setClient(json.data as ClientData);
+        } else {
+          setLoadError("客户数据格式异常");
+          setClient(null);
+        }
+      }
+    } catch {
+      setLoadError("加载失败，请检查网络后重试");
+      setClient(null);
     }
     setLoading(false);
   }, [clientId]);
@@ -94,7 +105,7 @@ export default function ClientDetailPage() {
         body: JSON.stringify({ stage: newStage }),
       });
       const json = await resp.json();
-      if (!resp.ok) { setLoadError(json.error ?? "更新失败"); return; }
+      if (!resp.ok) { setLoadError(json.error?.message ?? "更新失败"); return; }
       setClient({ ...client, stage: newStage });
     } catch { setLoadError("更新失败，请重试"); }
     setStageUpdating(false);
@@ -106,7 +117,7 @@ export default function ClientDetailPage() {
     try {
       const resp = await fetch(`/api/clients/${clientId}`, { method: "DELETE" });
       const json = await resp.json();
-      if (!resp.ok) { setLoadError(json.error ?? "删除失败"); return; }
+      if (!resp.ok) { setLoadError(json.error?.message ?? "删除失败"); return; }
       window.location.href = "/clients";
     } catch { setLoadError("删除失败，请重试"); }
     setDeleting(false);
@@ -121,10 +132,29 @@ export default function ClientDetailPage() {
       const resp = await fetch(`/api/clients/${clientId}/matches`);
       const json = await resp.json();
       if (!resp.ok) {
-        setMatchesError(json.error?.message ?? "加载失败");
+        const errCode = json.error?.code;
+        if (errCode === "UNAUTHENTICATED") {
+          setMatchesError("登录已失效，请重新登录");
+        } else if (errCode === "WORKSPACE_ACCESS_DENIED" || errCode === "FEATURE_NOT_ALLOWED") {
+          setMatchesError("无权访问匹配功能");
+        } else {
+          setMatchesError(json.error?.message ?? "加载失败");
+        }
         setMatches([]);
       } else {
-        setMatches((json.data ?? []) as MatchItem[]);
+        // API contract: GET /api/clients/[id]/matches returns { data: <MatchItem[]>, error: null }
+        const parsed = MatchListResponseSchema.safeParse(json);
+        if (parsed.success) {
+          setMatches(parsed.data.data);
+        } else {
+          const data = json.data;
+          if (Array.isArray(data)) {
+            setMatches(data as MatchItem[]);
+          } else {
+            setMatchesError("匹配数据格式异常");
+            setMatches([]);
+          }
+        }
       }
     } catch {
       setMatchesError("加载失败");
@@ -157,21 +187,29 @@ export default function ClientDetailPage() {
   };
 
   const handleDismissMatch = async (matchId: string) => {
-    await fetch(`/api/matches/${matchId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "dismissed" }),
-    });
-    fetchMatches();
+    try {
+      const resp = await fetch(`/api/matches/${matchId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "dismissed" }),
+      });
+      if (resp.ok) fetchMatches();
+    } catch {
+      // Silently fail; user can retry
+    }
   };
 
   const handleArchiveMatch = async (matchId: string) => {
-    await fetch(`/api/matches/${matchId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "archived" }),
-    });
-    fetchMatches();
+    try {
+      const resp = await fetch(`/api/matches/${matchId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "archived" }),
+      });
+      if (resp.ok) fetchMatches();
+    } catch {
+      // Silently fail; user can retry
+    }
   };
 
   if (loading) return <DetailSkeleton />;

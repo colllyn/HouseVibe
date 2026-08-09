@@ -9,6 +9,7 @@ import {
   WeightEditor,
 } from "@/features/matching/components";
 import type { MatchItem } from "@/features/matching/components/match-list";
+import { ClientListResponseSchema, MatchListResponseSchema } from "@/features/matching/schemas";
 
 const DEFAULT_WEIGHTS = {
   budget: 30,
@@ -73,7 +74,15 @@ function MatchesContent() {
         setClientsError(json.error?.message ?? "加载客户列表失败");
         setClients([]);
       } else {
-        setClients((json.data ?? []) as ClientOption[]);
+        // API contract: GET /api/clients returns { data: { clients, total, page, limit }, error: null }
+        const parsed = ClientListResponseSchema.safeParse(json);
+        if (parsed.success) {
+          setClients(parsed.data.data.clients);
+        } else {
+          // Graceful fallback for unexpected response shape
+          const clients = json.data?.clients;
+          setClients(Array.isArray(clients) ? clients : []);
+        }
       }
     } catch {
       setClientsError("加载客户列表失败");
@@ -95,13 +104,35 @@ function MatchesContent() {
       const resp = await fetch(`/api/clients/${selectedClientId}/matches`);
       const json = await resp.json();
       if (!resp.ok) {
-        setMatchesError(json.error?.message ?? "加载匹配结果失败");
+        const errCode = json.error?.code;
+        if (errCode === "UNAUTHENTICATED") {
+          setMatchesError("登录已失效，请重新登录");
+        } else if (errCode === "WORKSPACE_ACCESS_DENIED" || errCode === "FEATURE_NOT_ALLOWED") {
+          setMatchesError("无权访问匹配功能");
+        } else {
+          setMatchesError(json.error?.message ?? "加载匹配结果失败");
+        }
         setMatches([]);
         setStats(null);
       } else {
-        const data = (json.data ?? []) as MatchItem[];
-        setMatches(data);
-        computeStats(data);
+        // API contract: GET /api/clients/[id]/matches returns { data: <MatchItem[]>, error: null }
+        const parsed = MatchListResponseSchema.safeParse(json);
+        if (parsed.success) {
+          const data = parsed.data.data;
+          setMatches(data);
+          computeStats(data);
+        } else {
+          // Graceful fallback for unexpected response shape
+          const data = json.data;
+          if (Array.isArray(data)) {
+            setMatches(data as MatchItem[]);
+            computeStats(data as MatchItem[]);
+          } else {
+            setMatchesError("匹配数据格式异常");
+            setMatches([]);
+            setStats(null);
+          }
+        }
       }
     } catch {
       setMatchesError("加载匹配结果失败");
@@ -159,7 +190,16 @@ function MatchesContent() {
       });
       const json = await resp.json();
       if (!resp.ok) {
-        setMatchesError(json.error?.message ?? "计算失败");
+        const errCode = json.error?.code;
+        if (errCode === "UNAUTHENTICATED") {
+          setMatchesError("登录已失效，请重新登录");
+        } else if (errCode === "WORKSPACE_ACCESS_DENIED" || errCode === "FEATURE_NOT_ALLOWED") {
+          setMatchesError("无权访问匹配功能");
+        } else if (errCode === "RESOURCE_NOT_FOUND") {
+          setMatchesError("客户不存在或已被删除");
+        } else {
+          setMatchesError(json.error?.message ?? "计算失败");
+        }
         setMatches([]);
         setStats(null);
       } else {
@@ -177,11 +217,12 @@ function MatchesContent() {
   // Dismiss a match
   const handleDismiss = async (matchId: string) => {
     try {
-      await fetch(`/api/matches/${matchId}`, {
+      const resp = await fetch(`/api/matches/${matchId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "dismissed" }),
       });
+      if (!resp.ok) return;
       setMatches((prev) => prev.filter((m) => m.id !== matchId));
     } catch {
       // Silently fail; user can retry
@@ -191,11 +232,12 @@ function MatchesContent() {
   // Archive a match
   const handleArchive = async (matchId: string) => {
     try {
-      await fetch(`/api/matches/${matchId}`, {
+      const resp = await fetch(`/api/matches/${matchId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "archived" }),
       });
+      if (!resp.ok) return;
       setMatches((prev) => prev.filter((m) => m.id !== matchId));
     } catch {
       // Silently fail; user can retry

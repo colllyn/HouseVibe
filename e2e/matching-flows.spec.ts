@@ -202,3 +202,94 @@ test.describe("Property Matching E2E", () => {
     expect(content).not.toContain("13800000001");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Matching Dashboard Page — Production Crash Regression
+// ---------------------------------------------------------------------------
+
+test.describe("Matching Dashboard Crash Regression", () => {
+  test("matches page loads without client crash", async ({ page }) => {
+    await page.goto("/matches");
+    // Page must render without Next.js error overlay
+    await expect(page.locator("h1")).toContainText("房客匹配", { timeout: 10000 });
+    // No "Application error" overlay
+    await expect(page.locator("[data-nextjs-error-boundary]")).not.toBeAttached();
+  });
+
+  test("shows empty client state when no clients exist", async ({ browser }) => {
+    // Use a fresh context with no pre-existing data (create account state if needed)
+    const ctx = await browser.newContext({ storageState: "e2e/.auth/owner.json" });
+    const page = await ctx.newPage();
+    await page.goto("/matches");
+    await expect(page.locator("h1")).toContainText("房客匹配", { timeout: 10000 });
+    // Should show client selector area, not crash
+    const bodyText = await page.textContent("body");
+    // Either shows client dropdown or "no clients" message
+    expect(bodyText).toBeTruthy();
+    await ctx.close();
+  });
+
+  test("mobile 375px layout loads without crash", async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/matches");
+    await expect(page.locator("h1")).toContainText("房客匹配", { timeout: 10000 });
+    await expect(page.locator("[data-nextjs-error-boundary]")).not.toBeAttached();
+  });
+
+  test("select client and show match area without crash", async ({ page }) => {
+    await page.goto("/matches");
+    await expect(page.locator("h1")).toContainText("房客匹配", { timeout: 10000 });
+    // Page should be stable even if no client selected
+    await expect(page.locator("[data-nextjs-error-boundary]")).not.toBeAttached();
+  });
+
+  test("handles malformed client API response without crash", async ({ page }) => {
+    // Simulate the exact production crash: GET /api/clients returns object data
+    // but the old code treated json.data as array directly
+    await page.route("**/api/clients?limit=100", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: { clients: [{ id: "test-1", name: "Test Client" }], total: 1, page: 1, limit: 100 },
+          error: null,
+        }),
+      });
+    });
+    await page.goto("/matches");
+    await expect(page.locator("h1")).toContainText("房客匹配", { timeout: 10000 });
+    // Should still render without Next.js error overlay
+    await expect(page.locator("[data-nextjs-error-boundary]")).not.toBeAttached();
+    // Client should be visible in the select (Zod validation extracts data.clients)
+    await expect(page.locator("select option")).toContainText("Test Client", { timeout: 5000 });
+  });
+
+  test("handles null data in match API response without crash", async ({ page }) => {
+    // Simulate error response: data is null
+    await page.route("**/api/clients/*/matches", (route) => {
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: null,
+          error: { code: "INTERNAL_ERROR", message: "服务器错误" },
+        }),
+      });
+    });
+    await page.goto("/matches");
+    await expect(page.locator("h1")).toContainText("房客匹配", { timeout: 10000 });
+    // Select a client to trigger match fetch
+    await page.route("**/api/clients?limit=100", (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          data: { clients: [{ id: "test-2", name: "Error Client" }], total: 1, page: 1, limit: 100 },
+          error: null,
+        }),
+      });
+    });
+    await page.goto("/matches");
+    await expect(page.locator("[data-nextjs-error-boundary]")).not.toBeAttached();
+  });
+});

@@ -3,6 +3,7 @@
 import React from "react";
 import { MatchList } from "@/features/matching/components";
 import type { MatchItem } from "@/features/matching/components/match-list";
+import { MatchListResponseSchema } from "@/features/matching/schemas";
 
 export function PropertyMatchSection({ propertyId }: { propertyId: string }) {
   const [matches, setMatches] = React.useState<MatchItem[]>([]);
@@ -16,10 +17,29 @@ export function PropertyMatchSection({ propertyId }: { propertyId: string }) {
       const resp = await fetch(`/api/properties/${propertyId}/matches`);
       const json = await resp.json();
       if (!resp.ok) {
-        setError(json.error?.message ?? "加载失败");
+        const errCode = json.error?.code;
+        if (errCode === "UNAUTHENTICATED") {
+          setError("登录已失效，请重新登录");
+        } else if (errCode === "WORKSPACE_ACCESS_DENIED" || errCode === "FEATURE_NOT_ALLOWED") {
+          setError("无权访问匹配功能");
+        } else {
+          setError(json.error?.message ?? "加载失败");
+        }
         setMatches([]);
       } else {
-        setMatches((json.data ?? []) as MatchItem[]);
+        // API contract: GET /api/properties/[id]/matches returns { data: <MatchItem[]>, error: null }
+        const parsed = MatchListResponseSchema.safeParse(json);
+        if (parsed.success) {
+          setMatches(parsed.data.data);
+        } else {
+          const data = json.data;
+          if (Array.isArray(data)) {
+            setMatches(data as MatchItem[]);
+          } else {
+            setError("匹配数据格式异常");
+            setMatches([]);
+          }
+        }
       }
     } catch {
       setError("加载失败");

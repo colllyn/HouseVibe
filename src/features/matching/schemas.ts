@@ -95,6 +95,63 @@ export const CalculateMatchResponseSchema = z.object({
   matchedCount: z.number().int().nonnegative(),
 });
 
+// ─── Client List Item (for client selector) ──────────────────────────
+
+export const ClientOptionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+});
+
+// ─── Client List API Response ────────────────────────────────────────
+
+export const ClientListResponseSchema = z.object({
+  data: z.object({
+    clients: z.array(ClientOptionSchema),
+    total: z.number().int().nonnegative(),
+    page: z.number().int().positive(),
+    limit: z.number().int().positive(),
+  }),
+  error: z.null(),
+});
+
+// ─── Enriched Match Item (from GET /api/clients/[id]/matches) ────────
+
+export const EnrichedMatchItemSchema = z.object({
+  id: z.string(),
+  propertyId: z.string().optional(),
+  propertyTitle: z.string().optional(),
+  propertyDistrict: z.string().nullable().optional(),
+  propertyCommunity: z.string().nullable().optional(),
+  clientId: z.string().optional(),
+  clientName: z.string().optional(),
+  score: z.number().int().min(0).max(100),
+  matchLevel: MatchLevelEnum,
+  matchedReasons: z.array(MatchedReasonSchema).optional(),
+  unmatchedReasons: z.array(UnmatchedReasonSchema).optional(),
+  needsConfirmation: z.array(NeedsConfirmationSchema).optional(),
+  nextAction: z.string().optional(),
+  status: MatchStatusEnum,
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+});
+
+// ─── Match List API Response (GET /api/clients/[id]/matches) ─────────
+
+export const MatchListResponseSchema = z.object({
+  data: z.array(EnrichedMatchItemSchema),
+  error: z.null(),
+});
+
+// ─── Match List API Error Response ───────────────────────────────────
+
+export const ApiErrorResponseSchema = z.object({
+  data: z.null(),
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+  }),
+});
+
 // ─── Inferred Types ──────────────────────────────────────────────────
 
 export type MatchDimension = z.infer<typeof MatchDimensionEnum>;
@@ -107,3 +164,5 @@ export type WeightOverrides = z.infer<typeof WeightOverridesSchema>;
 export type CalculateMatchInput = z.infer<typeof CalculateMatchInputSchema>;
 export type MatchResult = z.infer<typeof MatchResultSchema>;
 export type CalculateMatchResponse = z.infer<typeof CalculateMatchResponseSchema>;
+export type ClientOption = z.infer<typeof ClientOptionSchema>;
+export type EnrichedMatchItem = z.infer<typeof EnrichedMatchItemSchema>;

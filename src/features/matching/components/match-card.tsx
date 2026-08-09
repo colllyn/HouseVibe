@@ -61,18 +61,22 @@ interface MatchCardProps {
   disabled?: boolean;
 }
 
-const LEVEL_CONFIG = {
+const LEVEL_CONFIG: Record<string, { icon: React.ComponentType<{ className?: string }>; label: string; color: string; iconColor: string }> = {
   excellent: { icon: Star, label: "极佳", color: "bg-green-100 text-green-800 border-green-200", iconColor: "text-green-600" },
   good: { icon: ThumbsUp, label: "良好", color: "bg-blue-100 text-blue-800 border-blue-200", iconColor: "text-blue-600" },
   fair: { icon: Minus, label: "一般", color: "bg-amber-100 text-amber-800 border-amber-200", iconColor: "text-amber-600" },
   low: { icon: ThumbsDown, label: "较低", color: "bg-gray-100 text-gray-600 border-gray-200", iconColor: "text-gray-500" },
 };
 
-const STATUS_CONFIG = {
+const LEVEL_FALLBACK = { icon: Minus, label: "未知", color: "bg-gray-100 text-gray-500 border-gray-200", iconColor: "text-gray-400" };
+
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   active: { label: "有效", color: "bg-green-100 text-green-700" },
   dismissed: { label: "已关闭", color: "bg-yellow-100 text-yellow-700" },
   archived: { label: "已归档", color: "bg-gray-100 text-gray-500" },
 };
+
+const STATUS_FALLBACK = { label: "未知", color: "bg-gray-100 text-gray-500" };
 
 export function MatchCard({
   match,
@@ -83,9 +87,9 @@ export function MatchCard({
 }: MatchCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const levelConfig = LEVEL_CONFIG[match.matchLevel];
+  const levelConfig = LEVEL_CONFIG[match.matchLevel] ?? LEVEL_FALLBACK;
   const LevelIcon = levelConfig.icon;
-  const statusConfig = STATUS_CONFIG[match.status];
+  const statusConfig = STATUS_CONFIG[match.status] ?? STATUS_FALLBACK;
 
   const handleAction = async (action: "dismiss" | "archive") => {
     setActionLoading(action);
@@ -101,7 +105,7 @@ export function MatchCard({
     <div
       className="rounded-lg border bg-card p-4 shadow-sm"
       role="article"
-      aria-label={`匹配 - ${match.matchLevel === "excellent" ? "极佳" : match.matchLevel === "good" ? "良好" : match.matchLevel === "fair" ? "一般" : "较低"}`}
+      aria-label={`匹配 - ${levelConfig.label}`}
     >
       {/* Header */}
       <div className="flex items-start justify-between gap-2">
