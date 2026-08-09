@@ -698,7 +698,7 @@
 | 属性 | 值 |
 |---|---|
 | Owner Agent | property-crm-engineer |
-| Feature 权限 | 需要 `property_matching` |
+| Feature 权限 | Workspace 核心功能（无需额外 entitlement） |
 
 计算指定客户与可选房源池之间的匹配。
 

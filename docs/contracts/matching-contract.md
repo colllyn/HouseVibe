@@ -226,14 +226,13 @@ UNIQUE(property_id, client_id)
 
 ---
 
-## 10. entitlement
+## 10. access control
 
-- `POST /api/matches/calculate` 需要 `has_feature('property_matching')`
-- `GET /api/clients/:id/matches` 需要 `has_feature('property_matching')`
-- `GET /api/properties/:id/matches` 需要 `has_feature('property_matching')`
-- 未授权返回 `403` + `{ error: { code: "FEATURE_NOT_ALLOWED", message: "需要 property_matching 权限" } }`
-- 默认所有注册用户拥有 `property_matching`（PRD §3.3）
-- Workspace 之间 entitlement 不可串用
+- 匹配功能是 Workspace 核心功能，任何认证的 workspace 成员均可使用。
+- 无需 `property_matching` feature entitlement（已移除，2026-08-09）。
+- 安全性依赖 Auth（getUser → 401）+ Workspace 成员关系（→ 403）+ 资源 workspace scoping + RLS。
+- `property_matching` feature key 保留在数据库 enum 中用于管理追踪，不再作为 API 访问门控。
+- Workspace 之间数据不可串用。
 
 ---
 

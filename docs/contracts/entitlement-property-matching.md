@@ -1,21 +1,27 @@
 # Entitlement Addendum: property_matching
 
 - 文档类型：Contract Addendum
-- 版本：1.0
-- 状态：FROZEN FOR P2-MATCH-001
-- 基准合同：api-contract.md §7, rls-contract.md
+- 版本：2.0
+- 状态：SUPERSEDED (2026-08-09) — 匹配已调整为 Workspace 核心功能
+- 基准合同：matching-contract.md §10 (updated)
 - 决议人：solution-architect
-- 日期：2026-08-03
+- 日期：2026-08-09
 
 ---
 
-## 1. 合同要求
+## 1. 状态变更
 
-以下要求正式进入 P2-MATCH-001 合同和验收范围：
+**匹配功能已调整为 Workspace 核心功能（2026-08-09）。**
 
-### 1.1 权限校验
+`property_matching` feature entitlement 不再作为匹配 API 的门控。
+认证 workspace 成员即可使用匹配功能，无需额外 entitlement。
 
-`property_matching` entitlement 必须为 `active`，方可使用匹配功能。
+### 1.1 Feature Key 保留
+
+`property_matching` feature key 仍保留在 `public.feature_key` 数据库 enum 中，
+`feature_entitlements` 表的历史记录不变。仅 API-level enforcement 已移除。
+
+以下为原合同内容（历史参考）：
 
 | API 路由 | 方法 | 校验点 |
 |---|---|---|

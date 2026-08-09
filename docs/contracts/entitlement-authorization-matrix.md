@@ -17,7 +17,7 @@
 |---|---|---|
 | `ai_data_extraction` | AI 结构化录入（房源/客户） | 所有注册用户 |
 | `semantic_search` | 自然语言搜索解析 | 所有注册用户 |
-| `property_matching` | 房客智能匹配 | 所有注册用户 |
+| `property_matching` | 房客智能匹配 | ~~所有注册用户~~ → Workspace 核心功能，无需 entitlement |
 | `shared_property_pool` | 合作共享库访问 | 所有注册用户 |
 | `content_factory` | AI 自媒体内容工厂 | **仅管理员授予** |
 
@@ -31,12 +31,12 @@
 | 客户 CRUD | 本 workspace | 本 workspace | 按 workspace 权限 |
 | `ai_data_extraction` | 默认 | 默认 | 具备 |
 | `semantic_search` | 默认 | 默认 | 具备 |
-| `property_matching` | 默认 | 默认 | 具备 |
+| `property_matching` | **核心功能** | **核心功能** | 具备（Workspace 核心功能，无需 entitlement） |
 | `shared_property_pool` | 默认 | 默认 | 管理平台规则 |
 | `content_factory` | **禁止** | 需授权 | 具备（可管理授权） |
 | 管理员功能 | 禁止 | 禁止 | 具备 |
 
-**注意**：虽然 `ai_data_extraction`、`semantic_search`、`property_matching`、`shared_property_pool` 默认授予所有用户，但数据库 schema 仍通过 `feature_entitlements` 表管理，以便未来支持差异化套餐和付费功能。
+**注意**：虽然 `ai_data_extraction`、`semantic_search`、`shared_property_pool` 默认授予所有用户，但数据库 schema 仍通过 `feature_entitlements` 表管理，以便未来支持差异化套餐和付费功能。`property_matching` 已调整为 Workspace 核心功能（2026-08-09），不再需要 entitlement。
 
 ---
 
